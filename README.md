@@ -2,6 +2,8 @@
 
 a high-performance, multi-agent ai engineering council built with rust. this system orchestrates local cli agents (like `gemini-cli` or `qwen-cli`) to collaborate as active engineering partners, directly modifying the project's codebase until tasks are complete.
 
+> **note:** this project is inspired by pewdiepie's local council ai, and even though this may not be as good as his, it aims to provide a powerful local multi-agent experience.
+
 ## features
 
 - **modern oled dashboard**: a minimalist, deep-black interface designed for high-density engineering workflows.
