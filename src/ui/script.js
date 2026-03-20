@@ -8,6 +8,37 @@ const feed = document.getElementById('feed');
 const status_text = document.getElementById('status-text');
 const status_dot = document.getElementById('status-dot');
 
+// Toast Notification System
+function showToast(message, type = 'info', duration = 4000) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+
+    const iconMap = {
+        success: '✓',
+        error: '✕',
+        warning: '⚠',
+        info: 'ℹ'
+    };
+
+    toast.innerHTML = `
+        <div class="toast-icon">${iconMap[type] || iconMap.info}</div>
+        <span class="toast-message">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    container.appendChild(toast);
+
+    if (duration > 0) {
+        setTimeout(() => {
+            toast.classList.add('removing');
+            setTimeout(() => toast.remove(), 250);
+        }, duration);
+    }
+
+    return toast;
+}
+
 // Agent binary inputs
 const bin_inputs = {
     strategist: document.getElementById('bin-strategist'),
@@ -33,13 +64,29 @@ Object.keys(bin_inputs).forEach(role => {
     if (saved) bin_inputs[role].value = saved;
 });
 
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    // Cmd/Ctrl + Enter to send message
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (!btn.disabled && query_input.value.trim()) {
+            btn.click();
+        }
+    }
+
+    // Escape to clear input
+    if (e.key === 'Escape' && document.activeElement === query_input) {
+        query_input.value = '';
+    }
+});
+
 // Test CLI functionality
 document.querySelectorAll('.test-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
         const role = btn.dataset.role;
         const command = bin_inputs[role].value.trim();
         if (!command) {
-            alert("Please enter a command first.");
+            showToast("Please enter a command first.", 'warning');
             return;
         }
 
@@ -201,7 +248,7 @@ function start_debate(query, session_id, autonomous, workspace, rounds) {
             update_status('Council Adjourned', false);
             // Optionally add a small notification card
             const done_div = document.createElement('div');
-            done_div.style = "text-align: center; color: var(--accent); font-size: 0.8rem; font-weight: 600; margin: 20px 0; text-transform: uppercase; letter-spacing: 0.1em;";
+            done_div.style = "text-align: center; color: var(--accent); font-size: 0.75rem; font-weight: 600; margin: 24px auto; padding: 12px 24px; background: var(--accent-muted); border: 1px solid var(--accent); border-radius: var(--radius); max-width: 300px; text-transform: uppercase; letter-spacing: 0.08em;";
             done_div.textContent = "— Deliberation Complete —";
             feed.appendChild(done_div);
         } else {
@@ -312,24 +359,23 @@ function append_message(agent, content, round, terminal_output = "") {
                 proposals.forEach(p => {
                     const prop_div = document.createElement('div');
                     prop_div.className = 'proposal-box';
-                    prop_div.style = "margin-top: 16px; border: 1px solid var(--border); border-radius: 0; overflow: hidden;";
-                    
+
                     const prop_header = document.createElement('div');
-                    prop_header.style = "background: var(--bg); padding: 8px 12px; font-size: 0.75rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;";
-                    prop_header.innerHTML = `<span><strong style="color: var(--primary);">PROPOSAL:</strong> ${p.path}</span>`;
-                    
+                    prop_header.className = 'proposal-header';
+                    prop_header.innerHTML = `<span><strong>PROPOSAL:</strong> ${p.path}</span>`;
+
                     const apply_btn = document.createElement('button');
                     apply_btn.textContent = "Apply Change";
-                    apply_btn.className = "browse-btn"; // reuse style
-                    apply_btn.style = "background: var(--accent); color: white; border: none; padding: 4px 12px;";
+                    apply_btn.className = "quick-action-btn";
+                    apply_btn.style = "background: var(--accent); color: white; border-color: var(--accent);";
                     apply_btn.onclick = () => apply_proposed_change(p.path, p.content, apply_btn);
-                    
+
                     prop_header.appendChild(apply_btn);
-                    
+
                     const prop_body = document.createElement('pre');
-                    prop_body.style = "margin: 0; padding: 12px; font-size: 0.8rem; background: #000; overflow-x: auto; font-family: 'Fira Code', monospace; color: #a5b4fc;";
+                    prop_body.className = 'proposal-body';
                     prop_body.textContent = p.content;
-                    
+
                     prop_div.appendChild(prop_header);
                     prop_div.appendChild(prop_body);
                     body.appendChild(prop_div);
@@ -351,7 +397,7 @@ function append_message(agent, content, round, terminal_output = "") {
         term_summary.style = "cursor: pointer; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;";
         
         const term_pre = document.createElement('pre');
-        term_pre.style = "margin-top: 8px; padding: 12px; background: #000; border-radius: 0; max-height: 400px; overflow-y: auto; overflow-x: hidden; color: #94a3b8; font-family: 'Fira Code', monospace; white-space: pre-wrap; overflow-wrap: anywhere;";
+        term_pre.style = "margin-top: 8px; padding: 12px; background: var(--bg); border-radius: var(--radius-sm); max-height: 400px; overflow-y: auto; overflow-x: hidden; color: #94a3b8; font-family: 'Fira Code', monospace; white-space: pre-wrap; overflow-wrap: anywhere;";
         term_pre.textContent = terminal_output;
         
         term_details.appendChild(term_summary);
@@ -394,13 +440,14 @@ async function apply_proposed_change(path, content, btn) {
         if (res.status === 'success') {
             btn.textContent = "Applied";
             btn.style.background = "var(--text-muted)";
+            showToast("Change applied successfully!", 'success');
         } else {
-            alert("Error: " + res.message);
+            showToast("Error: " + res.message, 'error');
             btn.disabled = false;
             btn.textContent = "Apply Change";
         }
     } catch (err) {
-        alert("Failed to apply change.");
+        showToast("Failed to apply change.", 'error');
         btn.disabled = false;
         btn.textContent = "Apply Change";
     }
