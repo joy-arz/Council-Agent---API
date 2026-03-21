@@ -52,7 +52,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
 async fn run_server(cfg: Arc<config>, store: Arc<session_store>) -> Result<(), anyhow::Error> {
     let app = Router::new()
-        .route("/api/council", get(api::handle_council))
+        .route("/api/enclave", get(api::handle_enclave))
         .route("/api/browse", get(api::routes::browse_workspace))
         .route("/api/test_cli", post(api::routes::test_cli))
         .route("/api/apply", post(api::routes::apply_change))
@@ -75,7 +75,7 @@ async fn run_cli(cfg: Arc<config>, args: cli_args) -> Result<(), anyhow::Error> 
     let query = match args.query {
         Some(q) => q,
         None => {
-            println!("=== council agent cli (rust) ===");
+            println!("=== enclave cli (rust) ===");
             print!("enter your query: ");
             use std::io::{self, Write};
             io::stdout().flush()?;
@@ -116,7 +116,7 @@ async fn run_cli(cfg: Arc<config>, args: cli_args) -> Result<(), anyhow::Error> 
     );
     orchestrator_inst.logger = logger;
 
-    println!("\n--- starting council session ---");
+    println!("\n--- starting enclave session ---");
     println!("workspace: {}\n", cfg.workspace_dir.display());
     println!("query: {}\n", query);
 

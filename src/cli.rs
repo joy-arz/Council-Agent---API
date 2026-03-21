@@ -4,7 +4,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 #[allow(non_camel_case_types)]
 pub struct cli_args {
-    /// the query or topic for the council to discuss
+    /// the query or topic for the enclave to discuss
     pub query: Option<String>,
 
     /// number of rounds for agents

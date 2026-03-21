@@ -1,9 +1,7 @@
-# Council Agent API (Rust)
+# Enclave (Rust)
 
-A high-performance, multi-agent AI engineering council built with Rust. This system orchestrates local CLI agents (like `gemini-cli` or `qwen-cli`) to collaborate as active engineering partners, directly modifying the project's codebase until tasks are complete.
-
+A high-performance, multi-agent AI engineering system built with Rust. This system orchestrates local CLI agents (like `gemini-cli` or `qwen-cli`) to collaborate as active engineering partners, directly modifying the project's codebase until tasks are complete.
 > **note:** This project is inspired by pewdiepie's local council AI, and even though this may not be as good as his, it aims to provide a powerful local multi-agent experience.
-
 > **⚠️ Demo Notice:** This project is still a work in progress/demo. Some features may not work as intended or might be incomplete. If you encounter any issues or have suggestions, please reach out!
 
 ---
@@ -19,7 +17,7 @@ Found a bug? Have a feature request? Want to contribute?
 
 ## Overview
 
-Council Agent API transforms how you work by bringing in a team of AI agents that don't just discuss code—they actively improve it. Unlike traditional AI assistants that merely suggest changes, the council can actually modify your codebase, run tests, and refactor components based on your tasks.
+Enclave transforms how you work by bringing in a team of AI agents that don't just discuss code—they actively improve it. Unlike traditional AI assistants that merely suggest changes, Enclave agents can actually modify your codebase, run tests, and refactor components based on your tasks.
 
 The system uses a structured deliberation process where different specialized agents analyze tasks from their unique perspectives, debate solutions, and reach consensus—much like a real engineering team.
 
@@ -31,26 +29,26 @@ The system uses a structured deliberation process where different specialized ag
 - **Active Engineering Partners**: Agents don't just talk; they **act**. In autonomous mode, they use tools to edit files, refactor code, and run shell commands.
 - **Propose & Review**: In non-autonomous mode, agents suggest file changes that can be reviewed and applied with a single click.
 - **Workspace Folder Selection**: Browse and select your project directory directly from the web UI using a native folder picker (supports macOS and Windows).
-- **Workflow-Driven Deliberation**: The council follows a structured engineering journey (architect → reviewer → refactorer → maintainer → lead engineer).
-- **Council Configuration**: Dynamically map different local CLI models to specific workflow roles directly from the sidebar.
-- **Session Persistence**: All sessions are automatically saved and can be resumed from the "Saved Sessions" modal.
-- **Project State Persistence**: Maintains a `.council_state.md` file in the workspace to track progress across sessions.
+- **Workflow-Driven Deliberation**: The enclave follows a structured engineering journey (architect → reviewer → refactorer → maintainer → lead engineer).
+- **Enclave Configuration**: Dynamically map different local CLI models to specific workflow roles directly from the sidebar.
+- **Session Persistence**: All sessions are automatically saved to `.enclave_history.json` and can be resumed from the "Saved Sessions" modal.
+- **Project State Persistence**: Maintains a `.enclave_state.md` file in the workspace to track progress across sessions.
 - **Autonomous Mode Toggle**: A safety switch that grants agents permission to use their internal tools (like `write_file`) to modify the local workspace.
-- **Real-Time Streaming**: Watch the council's deliberation and file edits in real-time via SSE.
+- **Real-Time Streaming**: Watch the enclave's deliberation and file edits in real-time via SSE.
 
 ---
 
 ## Architecture
 
-### How the Council Works
+### How Enclave Works
 
-The council operates through a structured multi-round deliberation process:
+Enclave operates through a structured multi-round deliberation process:
 
 1. **Round Start**: The Architect speaks first, establishing the technical approach and baseline implementation.
 2. **Parallel Analysis**: All other agents (Reviewer, Refactorer, Maintainer) analyze the task simultaneously, each from their specialized perspective.
 3. **Synthesis**: The Lead Engineer reviews all contributions and issues a verdict:
    - `FINISHED` - Task is complete
-   - `CONTINUE` - More work needed, council proceeds to next round
+   - `CONTINUE` - More work needed, enclave proceeds to next round
    - `PAUSED` - Task requires human input or clarification
 
 ### Agent Roles
@@ -65,7 +63,7 @@ The council operates through a structured multi-round deliberation process:
 
 ### Session Management
 
-Sessions are automatically persisted to `.council_history.json` in your workspace. This enables:
+Sessions are automatically persisted to `.enclave_history.json` in your workspace. This enables:
 
 - **Session Continuation**: Pick up exactly where you left off
 - **Saved Sessions Modal**: View and resume any previous session
@@ -79,7 +77,7 @@ Sessions are automatically persisted to `.council_history.json` in your workspac
 
 - **Rust**: Install via [rustup](https://rustup.rs/)
 - **CLI Agents**: Ensure you have agents like `gemini-cli` or `qwen-cli` installed and accessible in your path
-- **Workspace**: A project directory where the council will operate
+- **Workspace**: A project directory where Enclave will operate
 
 ### Configuration
 
@@ -141,7 +139,7 @@ Access at `http://localhost:8000`
 | **Browse** | Open native folder picker |
 | **Autonomous** | Toggle to allow agents to modify files directly |
 | **Rounds** | Number of deliberation cycles per task |
-| **Council Config** | Configure CLI binary for each agent role |
+| **Enclave Config** | Configure CLI binary for each agent role |
 
 **Session Controls (Bottom of Sidebar):**
 
@@ -192,7 +190,7 @@ Agents have permission to use their internal tools (`write_file`, `replace`, `ru
 ## Security & Safety
 
 - **Read-Only by Default**: Agents are instructed not to modify files unless autonomous mode is enabled
-- **Stateful Continuity**: The council reads `.council_state.md` at session start to track progress
+- **Stateful Continuity**: Enclave reads `.enclave_state.md` at session start to track progress
 - **XSS Protection**: All agent output and tool logs are rendered safely in the UI
 - **Path Traversal Protection**: File operations are sandboxed to the workspace directory
 - **Confirmation Required**: In non-autonomous mode, every file change requires explicit approval
@@ -202,7 +200,7 @@ Agents have permission to use their internal tools (`write_file`, `replace`, `ru
 ## File Structure
 
 ```
-council-agent-api/
+enclave/
 ├── src/
 │   ├── main.rs           # Entry point, server & CLI modes
 │   ├── cli.rs            # CLI argument parsing
@@ -210,7 +208,7 @@ council-agent-api/
 │   │   ├── routes.rs     # HTTP API endpoints
 │   │   └── sessions_mod.rs # Session storage
 │   ├── core/
-│   │   ├── orchestrator_mod.rs  # Council orchestration
+│   │   ├── orchestrator_mod.rs  # Enclave orchestration
 │   │   ├── memory.rs     # Sliding window context
 │   │   └── providers_mod.rs     # CLI provider abstraction
 │   ├── agents/
@@ -236,7 +234,7 @@ council-agent-api/
 
 ### "Session Not Found" Errors
 
-- Sessions are stored in `.council_history.json` in your workspace
+- Sessions are stored in `.enclave_history.json` in your workspace
 - If the file is deleted or corrupted, start a new session
 - The workspace directory must be writable
 

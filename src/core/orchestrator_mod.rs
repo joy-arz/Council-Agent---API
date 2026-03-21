@@ -47,7 +47,7 @@ impl orchestrator {
     }
 
     async fn get_state_path(&self) -> PathBuf {
-        self.workspace_dir.join(".council_state.md")
+        self.workspace_dir.join(".enclave_state.md")
     }
 
     pub async fn run_council<F, Fut>(&self, query: &str, mut on_message: F) -> Result<String, anyhow::Error>
@@ -68,7 +68,7 @@ impl orchestrator {
             let state_path = self.get_state_path().await;
             if state_path.exists() {
                 if let Ok(state_content) = fs::read_to_string(state_path).await {
-                    let _ = self.logger.log("restoring project state from .council_state.md").await;
+                    let _ = self.logger.log("restoring project state from .enclave_state.md").await;
                     mem.add_message("system".to_string(), format!("previous project state:\n{}", state_content), true);
                 }
             }
@@ -101,7 +101,7 @@ impl orchestrator {
                 terminal_output: terminal,
                 round,
             }).await.is_err() {
-                let _ = self.logger.log("client disconnected. aborting council.").await;
+                let _ = self.logger.log("client disconnected. aborting enclave.").await;
                 return Err(anyhow::anyhow!("client disconnected"));
             }
 
@@ -137,7 +137,7 @@ impl orchestrator {
                     },
                     Err(e) => {
                         let _ = self.logger.log(&format!("error from {}: {}", name, e)).await;
-                        // soft fail: let the council continue instead of crashing the whole session
+                        // soft fail: let the enclave continue instead of crashing the whole session
                         (format!("(failed to respond due to error: {})", e), format!("error: {}", e))
                     }
                 };
@@ -149,7 +149,7 @@ impl orchestrator {
                     terminal_output: terminal,
                     round,
                 }).await.is_err() {
-                    let _ = self.logger.log("client disconnected. aborting council.").await;
+                    let _ = self.logger.log("client disconnected. aborting enclave.").await;
                     return Err(anyhow::anyhow!("client disconnected"));
                 }
             }
@@ -167,7 +167,7 @@ impl orchestrator {
             terminal_output: terminal,
             round: self.max_rounds + 1,
         }).await.is_err() {
-            let _ = self.logger.log("client disconnected. aborting council.").await;
+            let _ = self.logger.log("client disconnected. aborting enclave.").await;
             return Err(anyhow::anyhow!("client disconnected"));
         }
 

@@ -21,7 +21,7 @@ use crate::utils::logger_mod::session_logger;
 
 #[derive(Deserialize)]
 #[allow(non_camel_case_types)]
-pub struct council_params {
+pub struct enclave_params {
     pub query: String,
     pub rounds: Option<usize>,
     pub session_id: Option<String>,
@@ -95,11 +95,11 @@ pub async fn test_cli(
     }
 }
 
-pub async fn handle_council(
-    Query(params): Query<council_params>,
+pub async fn handle_enclave(
+    Query(params): Query<enclave_params>,
     State((config_inst, session_store_inst)): State<(Arc<config>, Arc<session_store>)>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    tracing::info!("Council convening for query: {}", params.query);
+    tracing::info!("Enclave convening for query: {}", params.query);
     let (tx, rx) = mpsc::channel(100);
     let session_id = params.session_id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let autonomous = params.autonomous.unwrap_or(config_inst.autonomous_mode);
@@ -164,7 +164,7 @@ pub async fn handle_council(
             async move {
                 if let Ok(json) = serde_json::to_string(&resp) {
                     if tx_clone.send(Event::default().data(json)).await.is_err() {
-                        tracing::warn!("client disconnected, aborting council session.");
+                        tracing::warn!("client disconnected, aborting enclave session.");
                         return Err(());
                     }
                 }

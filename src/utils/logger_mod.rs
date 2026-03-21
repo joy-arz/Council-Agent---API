@@ -18,7 +18,7 @@ impl session_logger {
 
     pub async fn clear(&self) -> tokio::io::Result<()> {
         File::create(&self.log_path).await?;
-        self.log("\n# council session log\n").await
+        self.log("\n# enclave session log\n").await
     }
 
     pub async fn log(&self, message: &str) -> tokio::io::Result<()> {

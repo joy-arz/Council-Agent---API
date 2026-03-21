@@ -31,7 +31,7 @@ impl session_store {
     }
 
     fn get_history_path(&self) -> PathBuf {
-        self.workspace_dir.join(".council_history.json")
+        self.workspace_dir.join(".enclave_history.json")
     }
 
     fn load_from_disk(&mut self) {

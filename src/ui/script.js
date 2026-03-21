@@ -51,8 +51,8 @@ const bin_inputs = {
 const loading_indicator = document.getElementById('loading-indicator');
 const loading_text = document.getElementById('loading-text');
 
-let current_session_id = localStorage.getItem('council_session_id');
-let last_workspace = localStorage.getItem('council_workspace');
+let current_session_id = localStorage.getItem('enclave_session_id');
+let last_workspace = localStorage.getItem('enclave_workspace');
 let last_message_time = null;
 let silence_check_interval = null;
 let is_session_active = false;
@@ -63,7 +63,7 @@ if (last_workspace) {
 
 // Restore agent binaries from localStorage
 Object.keys(bin_inputs).forEach(role => {
-    const saved = localStorage.getItem(`council_bin_${role}`);
+    const saved = localStorage.getItem(`enclave_bin_${role}`);
     if (saved) bin_inputs[role].value = saved;
 });
 
@@ -134,7 +134,7 @@ if (current_session_id) {
 // New Session button handler
 document.getElementById('new-session-btn').addEventListener('click', () => {
     current_session_id = null;
-    localStorage.removeItem('council_session_id');
+    localStorage.removeItem('enclave_session_id');
     feed.innerHTML = `
         <div class="empty-state">
             <div class="empty-state-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
@@ -237,7 +237,7 @@ function escapeHtml(text) {
 
 async function continueSession(sessionId) {
     current_session_id = sessionId;
-    localStorage.setItem('council_session_id', sessionId);
+    localStorage.setItem('enclave_session_id', sessionId);
     closeSessionsModal();
 
     // Restore session from history
@@ -285,7 +285,7 @@ function check_silence() {
     }
 
     if (elapsed > 300000) { // After 5 minutes, show warning
-        showToast('Council seems stuck. May have failed silently.', 'warning', 8000);
+        showToast('Enclave seems stuck. May have failed silently.', 'warning', 8000);
     }
 }
 
@@ -320,7 +320,7 @@ async function deleteSession(sessionId) {
             // If we deleted the current session, clear it
             if (current_session_id === sessionId) {
                 current_session_id = null;
-                localStorage.removeItem('council_session_id');
+                localStorage.removeItem('enclave_session_id');
                 feed.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
@@ -344,7 +344,7 @@ browse_btn.addEventListener('click', async () => {
         const path = await response.json();
         if (path) {
             workspace_input.value = path;
-            localStorage.setItem('council_workspace', path);
+            localStorage.setItem('enclave_workspace', path);
         }
     } catch (err) {
         console.error("failed to browse:", err);
@@ -360,12 +360,12 @@ btn.addEventListener('click', () => {
     const rounds = rounds_input.value;
 
     if (workspace) {
-        localStorage.setItem('council_workspace', workspace);
+        localStorage.setItem('enclave_workspace', workspace);
     }
 
     // Save binaries to localStorage
     Object.keys(bin_inputs).forEach(role => {
-        localStorage.setItem(`council_bin_${role}`, bin_inputs[role].value);
+        localStorage.setItem(`enclave_bin_${role}`, bin_inputs[role].value);
     });
 
     btn.disabled = true;
@@ -406,7 +406,7 @@ function update_status(text, active = false) {
 }
 
 function start_debate(query, session_id, autonomous, workspace, rounds) {
-    let url = "/api/council?query=" + encodeURIComponent(query);
+    let url = "/api/enclave?query=" + encodeURIComponent(query);
     if (session_id) url += "&session_id=" + session_id;
     if (autonomous) url += "&autonomous=true";
     if (workspace) url += "&workspace_dir=" + encodeURIComponent(workspace);
@@ -431,7 +431,7 @@ function start_debate(query, session_id, autonomous, workspace, rounds) {
         const data = JSON.parse(event.data);
         console.log("Session info received:", data);
         current_session_id = data.session_id;
-        localStorage.setItem('council_session_id', current_session_id);
+        localStorage.setItem('enclave_session_id', current_session_id);
     });
 
     let lead_engineer_received = false;
@@ -469,7 +469,7 @@ function start_debate(query, session_id, autonomous, workspace, rounds) {
         show_loading(true, 'Waiting for your request...');
 
         if (lead_engineer_received) {
-            update_status('Council Adjourned', false);
+            update_status('Enclave Adjourned', false);
             // Optionally add a small notification card
             const done_div = document.createElement('div');
             done_div.style = "text-align: center; color: var(--accent); font-size: 0.75rem; font-weight: 600; margin: 24px auto; padding: 12px 24px; background: var(--accent-muted); border: 1px solid var(--accent); border-radius: var(--radius); max-width: 300px; text-transform: uppercase; letter-spacing: 0.08em;";
@@ -494,7 +494,7 @@ async function restore_session(session_id) {
             });
             update_status('System Idle', false);
         } else {
-            localStorage.removeItem('council_session_id');
+            localStorage.removeItem('enclave_session_id');
             update_status('System Idle', false);
         }
     } catch (err) {
