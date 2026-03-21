@@ -1,88 +1,272 @@
-# council agent api (rust)
+# Council Agent API (Rust)
 
-a high-performance, multi-agent ai engineering council built with rust. this system orchestrates local cli agents (like `gemini-cli` or `qwen-cli`) to collaborate as active engineering partners, directly modifying the project's codebase until tasks are complete.
+A high-performance, multi-agent AI engineering council built with Rust. This system orchestrates local CLI agents (like `gemini-cli` or `qwen-cli`) to collaborate as active engineering partners, directly modifying the project's codebase until tasks are complete.
 
-> **note:** this project is inspired by pewdiepie's local council ai, and even though this may not be as good as his, it aims to provide a powerful local multi-agent experience.
+> **note:** This project is inspired by pewdiepie's local council AI, and even though this may not be as good as his, it aims to provide a powerful local multi-agent experience.
 
-## features
-
-- **modern oled dashboard**: a minimalist, deep-black interface designed for high-density engineering workflows.
-- **active engineering partners**: agents don't just talk; they **act**. in autonomous mode, they use tools to edit files, refactor code, and run shell commands.
-- **propose & review**: in non-autonomous mode, agents suggest file changes that can be reviewed and applied with a single click.
-- **workspace folder selection**: browse and select your project directory directly from the web ui using a native folder picker (supports macos and windows).
-- **workflow-driven deliberation**: the council follows a structured engineering journey (architect -> reviewer -> refactorer -> maintainer -> lead engineer).
-- **council configuration**: dynamically map different local cli models to specific workflow roles directly from the sidebar.
-- **project state persistence**: maintains a `.council_state.md` file in the workspace to track progress across sessions.
-- **autonomous mode toggle**: a safety switch that grants agents permission to use their internal tools (like `write_file`) to modify the local workspace.
-- **real-time streaming**: watch the council's deliberation and file edits in real-time via sse.
+> **⚠️ Demo Notice:** This project is still a work in progress/demo. Some features may not work as intended or might be incomplete. If you encounter any issues or have suggestions, please reach out!
 
 ---
 
-## 🚀 getting started
+## Contact
 
-### 1. prerequisites
+Found a bug? Have a feature request? Want to contribute?
 
-- **rust**: install via [rustup](https://rustup.rs/).
-- **cli agents**: ensure you have agents like `gemini-cli` or `qwen-cli` installed and accessible in your path.
+- **Contact Form:** [https://www.joyarz.space/](https://www.joyarz.space/) (use the contact form on my portfolio)
+- **Email:** Direct email via the contact form above
 
-### 2. configuration
+---
 
-set up your environment variables by copying the template:
+## Overview
+
+Council Agent API transforms how you work by bringing in a team of AI agents that don't just discuss code—they actively improve it. Unlike traditional AI assistants that merely suggest changes, the council can actually modify your codebase, run tests, and refactor components based on your tasks.
+
+The system uses a structured deliberation process where different specialized agents analyze tasks from their unique perspectives, debate solutions, and reach consensus—much like a real engineering team.
+
+---
+
+## Features
+
+- **Modern OLED Dashboard**: A minimalist, deep-black interface designed for high-density engineering workflows.
+- **Active Engineering Partners**: Agents don't just talk; they **act**. In autonomous mode, they use tools to edit files, refactor code, and run shell commands.
+- **Propose & Review**: In non-autonomous mode, agents suggest file changes that can be reviewed and applied with a single click.
+- **Workspace Folder Selection**: Browse and select your project directory directly from the web UI using a native folder picker (supports macOS and Windows).
+- **Workflow-Driven Deliberation**: The council follows a structured engineering journey (architect → reviewer → refactorer → maintainer → lead engineer).
+- **Council Configuration**: Dynamically map different local CLI models to specific workflow roles directly from the sidebar.
+- **Session Persistence**: All sessions are automatically saved and can be resumed from the "Saved Sessions" modal.
+- **Project State Persistence**: Maintains a `.council_state.md` file in the workspace to track progress across sessions.
+- **Autonomous Mode Toggle**: A safety switch that grants agents permission to use their internal tools (like `write_file`) to modify the local workspace.
+- **Real-Time Streaming**: Watch the council's deliberation and file edits in real-time via SSE.
+
+---
+
+## Architecture
+
+### How the Council Works
+
+The council operates through a structured multi-round deliberation process:
+
+1. **Round Start**: The Architect speaks first, establishing the technical approach and baseline implementation.
+2. **Parallel Analysis**: All other agents (Reviewer, Refactorer, Maintainer) analyze the task simultaneously, each from their specialized perspective.
+3. **Synthesis**: The Lead Engineer reviews all contributions and issues a verdict:
+   - `FINISHED` - Task is complete
+   - `CONTINUE` - More work needed, council proceeds to next round
+   - `PAUSED` - Task requires human input or clarification
+
+### Agent Roles
+
+| Role | Purpose |
+|------|---------|
+| **Architect (Strategist)** | Designs the technical roadmap and implements foundational changes |
+| **Reviewer (Critic)** | Rigorously checks for bugs, security risks, and edge cases |
+| **Refactorer (Optimizer)** | Optimizes code for performance, readability, and style |
+| **Maintainer (Contrarian)** | Ensures long-term sustainability and challenges assumptions |
+| **Lead Engineer (Judge)** | Evaluates the workflow and issues final verdicts |
+
+### Session Management
+
+Sessions are automatically persisted to `.council_history.json` in your workspace. This enables:
+
+- **Session Continuation**: Pick up exactly where you left off
+- **Saved Sessions Modal**: View and resume any previous session
+- **Session Clearing**: Clear the UI while keeping session history for continuation
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Rust**: Install via [rustup](https://rustup.rs/)
+- **CLI Agents**: Ensure you have agents like `gemini-cli` or `qwen-cli` installed and accessible in your path
+- **Workspace**: A project directory where the council will operate
+
+### Configuration
+
+Set up your environment variables by copying the template:
 
 ```bash
 cp .env.example .env
 ```
 
-open `.env` and map your agent roles to your local binaries:
+Open `.env` and configure:
 
 ```env
-# cli binary mapping
-STRATEGIST_BINARY=gemini-cli
-CRITIC_BINARY=qwen-cli
-OPTIMIZER_BINARY=gemini-cli
-CONTRARIAN_BINARY=qwen-cli
-JUDGE_BINARY=gemini-cli
+# CLI binary mapping - map each role to your preferred CLI agent
+STRATEGIST_BINARY=gemini-cli      # Architect agent
+CRITIC_BINARY=qwen-cli            # Reviewer agent
+OPTIMIZER_BINARY=gemini-cli       # Refactorer agent
+CONTRARIAN_BINARY=qwen-cli        # Maintainer agent
+JUDGE_BINARY=gemini-cli           # Lead Engineer agent
 
-# optional defaults
-WORKSPACE_DIR=/absolute/path/to/default/project
+# Optional defaults
+WORKSPACE_DIR=/absolute/path/to/project
 AUTONOMOUS_MODE=false
 MAX_ROUNDS=2
 MAX_TOKENS_PER_AGENT=1000
+DEFAULT_TEMPERATURE=0.7
+HOST=127.0.0.1
+PORT=8000
 ```
 
-### 3. installation
+### Building
 
 ```bash
+# Development build
+cargo build
+
+# Release build (optimized)
 cargo build --release
 ```
 
 ---
 
-## 🛠 usage
+## Usage
 
-### server mode (web ui)
-start the web interface on `localhost:8000`:
+### Server Mode (Web UI)
+
+Start the web interface:
 
 ```bash
 cargo run -- --server
 ```
-*use the **workspace path** input in the sidebar to select the directory where agents will perform their work. toggle **autonomous** to allow agents to modify code.*
+
+Access at `http://localhost:8000`
+
+**Sidebar Controls:**
+
+| Control | Description |
+|---------|-------------|
+| **Workspace** | Select the project directory for agents to work in |
+| **Browse** | Open native folder picker |
+| **Autonomous** | Toggle to allow agents to modify files directly |
+| **Rounds** | Number of deliberation cycles per task |
+| **Council Config** | Configure CLI binary for each agent role |
+
+**Session Controls (Bottom of Sidebar):**
+
+| Button | Description |
+|--------|-------------|
+| **Clear Session** | Clear the current session's UI display |
+| **New Session** | Start a completely new session |
+| **Saved Sessions** | Open modal to view and resume previous sessions |
+
+### CLI Mode
+
+Run a one-off task from the terminal:
+
+```bash
+cargo run -- "Add user authentication to the login endpoint"
+```
+
+With custom rounds:
+
+```bash
+cargo run -- --rounds 3 --workspace /path/to/project "Refactor the database layer"
+```
 
 ---
 
-## 🧠 the council (workflow-specific)
+## Autonomous vs Propose Mode
 
-1. **architect**: designs the technical roadmap and implements the foundational changes.
-2. **reviewer**: rigorously checks implementation for bugs, security risks, and edge cases.
-3. **refactorer**: optimizes code for performance, readability, and style adherence.
-4. **maintainer**: ensures long-term sustainability and documents architectural decisions.
-5. **lead engineer**: evaluates the entire workflow and issues a project status: `FINISHED`, `CONTINUE`, or `PAUSED`.
+### Propose Mode (Default)
+
+Agents analyze your task and suggest changes, but **cannot modify files**. Each proposed change appears as a card with an "Apply Change" button. You review each suggestion before accepting.
+
+**Use when:**
+- You want full control over code changes
+- You need to review AI suggestions before implementation
+- Working in a sensitive production environment
+
+### Autonomous Mode
+
+Agents have permission to use their internal tools (`write_file`, `replace`, `run_shell_command`) to directly modify your workspace. Changes are applied immediately without confirmation.
+
+**Use when:**
+- You trust the agents and want maximum productivity
+- Working in a development/test environment
+- You have version control to revert any issues
 
 ---
 
-## 🔒 security & safety
+## Security & Safety
 
-- **read-only mode**: by default, agents are instructed not to modify files.
-- **autonomous mode**: when enabled, agents are given explicit permission to use their internal tools (like `write_file`, `replace`, `run_shell_command`) to edit the local workspace.
-- **stateful continuity**: the council reads `.council_state.md` at the start of every session to ensure they pick up exactly where they left off.
-- **xss protection**: all agent output and tool logs are rendered safely in the ui.
+- **Read-Only by Default**: Agents are instructed not to modify files unless autonomous mode is enabled
+- **Stateful Continuity**: The council reads `.council_state.md` at session start to track progress
+- **XSS Protection**: All agent output and tool logs are rendered safely in the UI
+- **Path Traversal Protection**: File operations are sandboxed to the workspace directory
+- **Confirmation Required**: In non-autonomous mode, every file change requires explicit approval
+
+---
+
+## File Structure
+
+```
+council-agent-api/
+├── src/
+│   ├── main.rs           # Entry point, server & CLI modes
+│   ├── cli.rs            # CLI argument parsing
+│   ├── api/
+│   │   ├── routes.rs     # HTTP API endpoints
+│   │   └── sessions_mod.rs # Session storage
+│   ├── core/
+│   │   ├── orchestrator_mod.rs  # Council orchestration
+│   │   ├── memory.rs     # Sliding window context
+│   │   └── providers_mod.rs     # CLI provider abstraction
+│   ├── agents/
+│   │   ├── base.rs       # Base agent structure
+│   │   ├── roles.rs      # Role definitions
+│   │   └── judge.rs      # Lead engineer agent
+│   └── ui/
+│       ├── index.html    # Dashboard UI
+│       └── script.js     # Frontend logic
+├── .env.example          # Environment template
+└── Cargo.toml           # Dependencies
+```
+
+---
+
+## Troubleshooting
+
+### Agents Not Responding
+
+1. Verify CLI binaries are in your PATH
+2. Test each agent binary individually from the sidebar
+3. Check the terminal for error messages
+
+### "Session Not Found" Errors
+
+- Sessions are stored in `.council_history.json` in your workspace
+- If the file is deleted or corrupted, start a new session
+- The workspace directory must be writable
+
+### High Memory Usage
+
+- Reduce `MAX_TOKENS_PER_AGENT` in your `.env`
+- Limit `MAX_ROUNDS` for simpler tasks
+- The memory system uses a sliding window to manage context size
+
+### Autonomous Mode Changes Not Persisting
+
+- Ensure the workspace directory path is correct
+- Verify write permissions on the workspace
+- Check that agents are receiving the autonomous flag
+
+---
+
+## Environment Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STRATEGIST_BINARY` | - | CLI command for Architect |
+| `CRITIC_BINARY` | - | CLI command for Reviewer |
+| `OPTIMIZER_BINARY` | - | CLI command for Refactorer |
+| `CONTRARIAN_BINARY` | - | CLI command for Maintainer |
+| `JUDGE_BINARY` | - | CLI command for Lead Engineer |
+| `WORKSPACE_DIR` | `./workspace` | Default workspace directory |
+| `AUTONOMOUS_MODE` | `false` | Default autonomous setting |
+| `MAX_ROUNDS` | `2` | Default deliberation rounds |
+| `MAX_TOKENS_PER_AGENT` | `1000` | Token limit per agent response |
+| `DEFAULT_TEMPERATURE` | `0.7` | Sampling temperature |
+| `HOST` | `127.0.0.1` | Server bind address |
+| `PORT` | `8000` | Server port |
