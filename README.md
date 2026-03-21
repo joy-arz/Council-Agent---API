@@ -82,8 +82,37 @@ Sessions are automatically persisted to `.enclave_history.json` in your workspac
 ### Prerequisites
 
 - **Rust**: Install via [rustup](https://rustup.rs/)
-- **CLI Agents**: Ensure you have agents like `gemini` or `qwen` installed and accessible in your path
+- **CLI Agents**: Ensure you have at least one supported CLI agent installed and accessible in your path (see Supported AI Providers below)
 - **Workspace**: A project directory where Enclave will operate
+
+### Supported AI Providers
+
+Enclave supports any CLI agent that can accept prompts via stdin. The autonomous mode (auto-approval) flags are automatically applied based on the CLI detected:
+
+| CLI Agent | Autonomous Flag | Notes |
+|-----------|-----------------|-------|
+| **Qwen** (`qwen`) | `--yolo` or `-y` | Use `qwen --yolo` or `--approval-mode yolo` |
+| **Gemini** (`gemini`) | `--yolo` or `-y` | Google Gemini CLI |
+| **Codex** (`codex`) | `--full-auto` | OpenAI's Codex CLI |
+| **Claude Code** (`claude`) | `--dangerously-skip-permissions` | Anthropic's Claude CLI |
+| **OpenCode** (`opencode`) | `--yolo` | Supports `--yolo` or `--dangerously-skip-permissions` |
+
+**How it works:** When autonomous mode is enabled, Enclave automatically detects the CLI agent and appends the appropriate flag to enable auto-approval of file edits and shell commands.
+
+**Examples:**
+```bash
+# Qwen - YOLO mode
+qwen --yolo "fix the bug"
+
+# Gemini - YOLO mode
+gemini --yolo "refactor this"
+
+# Codex - Full auto
+codex --full-auto "implement feature"
+
+# Claude Code - Skip permissions
+claude --dangerously-skip-permissions "analyze code"
+```
 
 ### Configuration
 
@@ -97,6 +126,7 @@ Open `.env` and configure:
 
 ```env
 # CLI binary mapping - map each role to your preferred CLI agent
+# Supported agents: qwen, gemini, codex, claude, opencode
 STRATEGIST_BINARY=gemini      # Architect agent
 CRITIC_BINARY=qwen            # Reviewer agent
 OPTIMIZER_BINARY=gemini       # Refactorer agent
@@ -269,7 +299,7 @@ enclave/
 | `JUDGE_BINARY` | - | CLI command for Lead Engineer |
 | `WORKSPACE_DIR` | `./workspace` | Default workspace directory |
 | `AUTONOMOUS_MODE` | `false` | Default autonomous setting |
-| `MAX_ROUNDS` | `2` | Default deliberation rounds |
+| `MAX_ROUNDS` | `7` | Default deliberation rounds |
 | `MAX_TOKENS_PER_AGENT` | `1000` | Token limit per agent response |
 | `DEFAULT_TEMPERATURE` | `0.7` | Sampling temperature |
 | `HOST` | `127.0.0.1` | Server bind address |

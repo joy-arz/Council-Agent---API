@@ -69,15 +69,33 @@ impl model_provider for cli_provider {
             let _ = l.log(&format!("executing cli: {}", self.binary_path)).await;
         }
 
-        // Parse command and determine how to pass the prompt
-        // Some CLIs like qwen expect `-p "prompt"` format, others expect stdin
-        // We'll pass prompt via stdin for now (most common)
+        // Parse command and determine autonomous mode flag based on AI CLI
+        // Each CLI has its own flag for auto-approval/yolo mode:
+        // - qwen: -y or --yolo
+        // - gemini: --yolo or -y
+        // - codex: --full-auto or -a never
+        // - claude: --dangerously-skip-permissions
+        // - opencode: --yolo or --dangerously-skip-permissions
+        let final_cmd = if self.is_autonomous {
+            let base_cmd = self.binary_path.trim();
+            let has_autonomous_flag =
+                base_cmd.contains("--full-auto") ||
+                base_cmd.contains("-a never") ||
+                base_cmd.contains("--dangerously-skip-permissions") ||
+                base_cmd.contains("--yolo") ||
+                base_cmd.contains(" -y") || // space-y to avoid matching "qy" or similar
+                base_cmd.ends_with(" -y"); // also catch trailing -y
 
-        let final_cmd = if self.is_autonomous
-            && !self.binary_path.contains("--no-confirmation")
-            && self.binary_path.contains("qwen")
-        {
-            format!("{} --no-confirmation", self.binary_path.trim())
+            if has_autonomous_flag {
+                base_cmd.to_string()
+            } else if base_cmd.contains("codex") {
+                format!("{} --full-auto", base_cmd)
+            } else if base_cmd.contains("claude") {
+                format!("{} --dangerously-skip-permissions", base_cmd)
+            } else {
+                // qwen, gemini, opencode and others use -y/--yolo
+                format!("{} --yolo", base_cmd)
+            }
         } else {
             self.binary_path.clone()
         };
@@ -119,15 +137,10 @@ impl model_provider for cli_provider {
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let mut full_terminal = format!("{}{}", stdout, stderr);
-
-        // Filter out the massive prompts to prevent UI clutter
-        full_terminal = full_terminal.replace(&full_prompt, "\n[... FULL PROMPT REDACTED FOR CLARITY ...]\n");
-        full_terminal = full_terminal.replace(prompt, "\n[... HISTORY REDACTED FOR CLARITY ...]\n");
 
         if output.status.success() {
-            // clean output - extract actual response, skipping debug noise
-            // the actual response typically comes after all the debug/thinking blocks
+            // Extract clean dialogue for user-facing output
+            // and thinking/process logs for terminal display
             let lines: Vec<&str> = stdout.lines().collect();
             let debug_markers = [
                 "Debug mode enabled",
@@ -140,7 +153,7 @@ impl model_provider for cli_provider {
                 "</thinking>",
             ];
 
-            // find the last non-debug line that has substantial content
+            // For user dialogue: extract clean response (last substantial content block)
             let mut cleaned_lines: Vec<&str> = Vec::new();
             let mut found_real_content = false;
 
@@ -171,10 +184,54 @@ impl model_provider for cli_provider {
             cleaned_lines.reverse();
             let cleaned = cleaned_lines.join("\n").trim().to_string();
 
+            // For terminal logs: extract thinking, debug info, and process logs
+            // Skip the actual dialogue content (too verbose for logs)
+            let mut thinking_logs: Vec<&str> = Vec::new();
+            let mut in_thinking = false;
+
+            for line in &lines {
+                let trimmed = line.trim();
+
+                // detect thinking blocks
+                if trimmed.starts_with("<thinking>") {
+                    in_thinking = true;
+                    thinking_logs.push(line);
+                    continue;
+                }
+                if trimmed.starts_with("</thinking>") {
+                    in_thinking = false;
+                    thinking_logs.push(line);
+                    continue;
+                }
+
+                // include thinking block content
+                if in_thinking {
+                    thinking_logs.push(line);
+                    continue;
+                }
+
+                // include debug markers and warnings in logs
+                let is_debug = debug_markers.iter().any(|m| trimmed.starts_with(m));
+                if is_debug || trimmed.starts_with("Logging to:") || trimmed.contains("Tool \"write_file\"") {
+                    thinking_logs.push(line);
+                    continue;
+                }
+
+                // skip verbose dialogue lines (we'll show dialogue in main chat)
+                if !trimmed.is_empty() && !is_debug {
+                    // include summary markers and key process indicators
+                    if trimmed.contains('=') || trimmed.contains("---") || trimmed.starts_with('#') {
+                        thinking_logs.push(line);
+                    }
+                }
+            }
+
+            let thinking_output = thinking_logs.join("\n");
+
             if let Some(ref l) = self.logger {
                 let _ = l.log("cli execution successful.").await;
             }
-            Ok((cleaned, full_terminal))
+            Ok((cleaned, thinking_output))
         } else {
             let error_msg = stderr.trim().to_string();
             if let Some(ref l) = self.logger {

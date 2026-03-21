@@ -50,7 +50,7 @@ pub struct config {
 fn default_debug() -> bool { true }
 fn default_port() -> u16 { 8000 }
 fn default_host() -> String { "127.0.0.1".to_string() }
-fn default_max_rounds() -> usize { 3 }
+fn default_max_rounds() -> usize { 7 }
 fn default_max_tokens() -> u32 { 500 }
 fn default_temperature() -> f32 { 0.7 }
 fn default_true() -> bool { true }

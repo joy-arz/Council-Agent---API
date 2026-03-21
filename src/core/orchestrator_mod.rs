@@ -112,7 +112,6 @@ impl orchestrator {
         }
 
         let mut round = 0;
-        let mut judge_decision = "CONTINUE".to_string();
         let mut verdict: Option<String> = None; // will be set if judge returns early verdict
 
         loop {
@@ -196,23 +195,31 @@ impl orchestrator {
             }
 
             // check if we should continue or stop
-            if round >= self.max_rounds {
-                judge_decision = "FINISHED".to_string();
-            } else if self.auto_rounds {
-                // ask judge for decision in auto mode
+            // In auto-rounds mode, judge decides if we should continue
+            // Otherwise, we proceed until max_rounds is reached
+            if self.auto_rounds && round >= 3 {
+                // Only ask judge after at least 2 rounds (strategist + parallel agents)
+                // This gives enough context for a meaningful decision
                 let _ = self.logger.log("--- checking judge for auto decision ---").await;
                 let history = self.memory.lock().await.get_formatted_history();
                 let (verdict_json, _) = self.judge.get_final_verdict(&history).await?;
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&verdict_json) {
                     if let Some(decision) = parsed.get("final_decision").and_then(|d| d.as_str()) {
-                        judge_decision = decision.to_string();
                         verdict = Some(verdict_json);
-                        let _ = self.logger.log(&format!("judge decision: {}", judge_decision)).await;
+                        let _ = self.logger.log(&format!("judge decision: {} (round {}/{})", decision, round, self.max_rounds)).await;
+
+                        // If judge says FINISHED or PAUSED, we're done
+                        if decision != "CONTINUE" {
+                            break;
+                        }
                     }
                 }
-                if judge_decision != "CONTINUE" {
-                    break;
-                }
+            }
+
+            // Hard stop at max_rounds - this is the absolute limit
+            if round >= self.max_rounds {
+                let _ = self.logger.log(&format!("max rounds ({}) reached", self.max_rounds)).await;
+                break;
             }
         }
 
