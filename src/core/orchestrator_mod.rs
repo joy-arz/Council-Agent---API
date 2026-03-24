@@ -102,11 +102,19 @@ impl orchestrator {
             }
 
             // load previous project state if it exists (refinement: project continuation)
+            // Read file before acquiring lock to minimize lock duration
             let state_path = self.get_state_path().await;
-            if state_path.exists() && mem.pinned_messages.is_empty() {
-                if let Ok(state_content) = fs::read_to_string(state_path).await {
+            let state_content = if state_path.exists() {
+                fs::read_to_string(state_path).await.ok()
+            } else {
+                None
+            };
+
+            // Now acquire lock only for the in-memory operation
+            if let Some(content) = state_content {
+                if mem.pinned_messages.is_empty() {
                     let _ = self.logger.log("restoring project state from .enclave_state.md").await;
-                    mem.add_message("system".to_string(), format!("previous project state:\n{}", state_content), true);
+                    mem.add_message("system".to_string(), format!("previous project state:\n{}", content), true);
                 }
             }
         }

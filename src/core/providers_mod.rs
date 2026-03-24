@@ -69,33 +69,40 @@ impl model_provider for cli_provider {
             let _ = l.log(&format!("executing cli: {}", self.binary_path)).await;
         }
 
-        // Parse command and determine autonomous mode flag based on AI CLI
-        // Each CLI has its own flag for auto-approval/yolo mode:
-        // - qwen: -y or --yolo
-        // - gemini: --yolo or -y
-        // - codex: --full-auto or -a never
-        // - claude: --dangerously-skip-permissions
-        // - opencode: --yolo or --dangerously-skip-permissions
+        // Parse command and determine autonomous mode flag based on AI CLI binary name
+        // Each CLI has its own flag for auto-approval/yolo mode
         let final_cmd = if self.is_autonomous {
             let base_cmd = self.binary_path.trim();
+
+            // Check if already has an autonomous flag by looking for known flag patterns
             let has_autonomous_flag =
                 base_cmd.contains("--full-auto") ||
                 base_cmd.contains("-a never") ||
                 base_cmd.contains("--dangerously-skip-permissions") ||
                 base_cmd.contains("--yolo") ||
-                base_cmd.contains(" -y") || // space-y to avoid matching "qy" or similar
-                base_cmd.ends_with(" -y"); // also catch trailing -y
+                base_cmd.contains(" -y"); // space-y flag
 
-            if has_autonomous_flag {
-                base_cmd.to_string()
-            } else if base_cmd.contains("codex") {
-                format!("{} --full-auto", base_cmd)
-            } else if base_cmd.contains("claude") {
-                format!("{} --dangerously-skip-permissions", base_cmd)
-            } else {
-                // qwen, gemini, opencode and others use -y/--yolo
-                format!("{} --yolo", base_cmd)
-            }
+                if has_autonomous_flag {
+                    // Already has a flag, use as-is
+                    base_cmd.to_string()
+                } else {
+                    // Extract binary name (last component after / or space, or the whole string if no separators)
+                    let binary_name = base_cmd
+                        .split(['/', ' ', '\\'])
+                        .next_back()
+                        .unwrap_or(base_cmd)
+                        .to_lowercase();
+
+                    // Append appropriate autonomous flag based on binary name
+                    if binary_name.contains("codex") {
+                        format!("{} --full-auto", base_cmd)
+                    } else if binary_name.contains("claude") {
+                        format!("{} --dangerously-skip-permissions", base_cmd)
+                    } else {
+                        // qwen, gemini, opencode, and others default to --yolo
+                        format!("{} --yolo", base_cmd)
+                    }
+                }
         } else {
             self.binary_path.clone()
         };
@@ -206,11 +213,20 @@ impl model_provider for openai_provider {
             .await?;
 
         let data: serde_json::Value = res.json().await?;
-        let content = data["choices"][0]["message"]["content"]
+
+        // safe array access with bounds checking
+        let choices = data["choices"].as_array()
+            .ok_or_else(|| anyhow::anyhow!("openai response: choices is not an array"))?;
+
+        if choices.is_empty() {
+            return Err(anyhow::anyhow!("openai response: choices array is empty"));
+        }
+
+        let content = choices[0]["message"]["content"]
             .as_str()
-            .ok_or_else(|| anyhow::anyhow!("failed to parse openai response"))?
+            .ok_or_else(|| anyhow::anyhow!("openai response: message content is missing or not a string"))?
             .to_string();
-        
+
         Ok((content.clone(), content))
     }
 }
@@ -260,11 +276,20 @@ impl model_provider for anthropic_provider {
             .await?;
 
         let data: serde_json::Value = res.json().await?;
-        let content = data["content"][0]["text"]
+
+        // safe array access with bounds checking
+        let content_arr = data["content"].as_array()
+            .ok_or_else(|| anyhow::anyhow!("anthropic response: content is not an array"))?;
+
+        if content_arr.is_empty() {
+            return Err(anyhow::anyhow!("anthropic response: content array is empty"));
+        }
+
+        let content = content_arr[0]["text"]
             .as_str()
-            .ok_or_else(|| anyhow::anyhow!("failed to parse anthropic response"))?
+            .ok_or_else(|| anyhow::anyhow!("anthropic response: text is missing or not a string"))?
             .to_string();
-        
+
         Ok((content.clone(), content))
     }
 }

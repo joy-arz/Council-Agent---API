@@ -34,6 +34,7 @@ The system uses a structured deliberation process where different specialized ag
 - **Modern OLED Dashboard**: A minimalist, deep-black interface designed for high-density engineering workflows.
 - **Active Engineering Partners**: Agents don't just talk; they **act**. In autonomous mode, they use tools to edit files, refactor code, and run shell commands.
 - **Propose & Review**: In non-autonomous mode, agents suggest file changes that can be reviewed and applied with a single click.
+- **Auto Rounds**: Agents automatically determine when to stop deliberation (enabled by default). Toggle off to use fixed round limits.
 - **Workspace Folder Selection**: Browse and select your project directory directly from the web UI using a native folder picker (supports macOS and Windows).
 - **Workflow-Driven Deliberation**: The enclave follows a structured engineering journey (architect → reviewer → refactorer → maintainer → lead engineer).
 - **Enclave Configuration**: Dynamically map different local CLI models to specific workflow roles directly from the sidebar.
@@ -41,6 +42,7 @@ The system uses a structured deliberation process where different specialized ag
 - **Project State Persistence**: Maintains a `.enclave_state.md` file in the workspace to track progress across sessions.
 - **Autonomous Mode Toggle**: A safety switch that grants agents permission to use their internal tools (like `write_file`) to modify the local workspace.
 - **Real-Time Streaming**: Watch the enclave's deliberation and file edits in real-time via SSE.
+- **Graceful Shutdown**: Server shuts down cleanly on Ctrl+C, completing in-flight requests.
 
 ---
 
@@ -136,7 +138,7 @@ JUDGE_BINARY=gemini           # Lead Engineer agent
 # Optional defaults
 WORKSPACE_DIR=/absolute/path/to/project
 AUTONOMOUS_MODE=false
-MAX_ROUNDS=2
+MAX_ROUNDS=7                  # Default deliberation rounds (ask judge after round 3)
 MAX_TOKENS_PER_AGENT=1000
 DEFAULT_TEMPERATURE=0.7
 HOST=127.0.0.1
@@ -174,7 +176,8 @@ Access at `http://localhost:8000`
 | **Workspace** | Select the project directory for agents to work in |
 | **Browse** | Open native folder picker |
 | **Autonomous** | Toggle to allow agents to modify files directly |
-| **Rounds** | Number of deliberation cycles per task |
+| **Auto Rounds** | When on, agents decide when to stop (default: on) |
+| **Max Rounds** | Maximum deliberation cycles (only applies when Auto Rounds is off) |
 | **Enclave Config** | Configure CLI binary for each agent role |
 
 **Session Controls (Bottom of Sidebar):**
@@ -255,6 +258,8 @@ enclave/
 │       ├── index.html    # Dashboard UI
 │       └── script.js     # Frontend logic
 ├── .env.example          # Environment template
+├── CONTRIBUTING.md       # Contribution guidelines
+├── LICENSE               # MIT License
 └── Cargo.toml           # Dependencies
 ```
 

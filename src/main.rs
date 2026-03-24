@@ -67,7 +67,20 @@ async fn run_server(cfg: Arc<config>, store: Arc<session_store>) -> Result<(), a
     let addr = format!("{}:{}", cfg.host, cfg.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("server listening on http://{}", addr);
-    axum::serve(listener, app).await?;
+
+    // graceful shutdown on SIGINT/SIGTERM
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+        tracing::info!("shutdown signal received, stopping server...");
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+
+    tracing::info!("server stopped");
     Ok(())
 }
 

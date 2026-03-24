@@ -37,20 +37,30 @@ impl session_store {
     fn load_from_disk(&mut self) {
         let path = self.get_history_path();
         if path.exists() {
-            if let Ok(data) = fs::read_to_string(path) {
-                if let Ok(loaded_sessions) = serde_json::from_str::<HashMap<String, Vec<agent_response>>>(&data) {
-                    *self.sessions.get_mut() = loaded_sessions;
+            match fs::read_to_string(path) {
+                Ok(data) => {
+                    match serde_json::from_str::<HashMap<String, Vec<agent_response>>>(&data) {
+                        Ok(loaded_sessions) => {
+                            *self.sessions.get_mut() = loaded_sessions;
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: failed to parse session history: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: failed to read session history file: {}", e);
                 }
             }
         }
     }
 
-    async fn save_to_disk(&self) {
+    async fn save_to_disk(&self) -> Result<(), anyhow::Error> {
         let path = self.get_history_path();
         let sessions = self.sessions.lock().await;
-        if let Ok(data) = serde_json::to_string_pretty(&*sessions) {
-            let _ = tokio::fs::write(path, data).await;
-        }
+        let data = serde_json::to_string_pretty(&*sessions)?;
+        tokio::fs::write(path, data).await?;
+        Ok(())
     }
 
     pub async fn add_message(&self, session_id: &str, msg: agent_response) {
@@ -58,7 +68,9 @@ impl session_store {
             let mut sessions: tokio::sync::MutexGuard<'_, HashMap<String, Vec<agent_response>>> = self.sessions.lock().await;
             sessions.entry(session_id.to_string()).or_default().push(msg);
         }
-        self.save_to_disk().await;
+        if let Err(e) = self.save_to_disk().await {
+            eprintln!("Warning: failed to persist session: {}", e);
+        }
     }
 
     pub async fn get_history(&self, session_id: &str) -> Vec<agent_response> {
@@ -95,7 +107,9 @@ impl session_store {
         let mut sessions: tokio::sync::MutexGuard<'_, HashMap<String, Vec<agent_response>>> = self.sessions.lock().await;
         if sessions.remove(session_id).is_some() {
             drop(sessions);
-            self.save_to_disk().await;
+            if let Err(e) = self.save_to_disk().await {
+                eprintln!("Warning: failed to persist session after deletion: {}", e);
+            }
             true
         } else {
             false

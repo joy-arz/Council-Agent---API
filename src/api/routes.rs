@@ -100,7 +100,12 @@ pub async fn handle_enclave(
     Query(params): Query<enclave_params>,
     State((config_inst, session_store_inst)): State<(Arc<config>, Arc<session_store>)>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    tracing::info!("Enclave convening for query: {}", params.query);
+    // sanitize query for logging - remove ANSI escape codes and control characters
+    let query_for_log = params.query
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect::<String>();
+    tracing::info!("Enclave convening for query: {}", query_for_log);
     let (tx, rx) = mpsc::channel(100);
     let has_session = params.session_id.is_some();
     let session_id = params.session_id.unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -171,7 +176,14 @@ pub async fn handle_enclave(
 
         // restore session history if available
         if !prev_history.is_empty() {
-            let history_preview: Vec<String> = prev_history.iter().map(|m| format!("[{}]: {}", m.agent, &m.content[..m.content.len().min(50)])).collect();
+            let history_preview: Vec<String> = prev_history.iter().map(|m| {
+                let preview = if m.content.len() > 50 {
+                    format!("{}...", &m.content[..50])
+                } else {
+                    m.content.clone()
+                };
+                format!("[{}]: {}", m.agent, preview)
+            }).collect();
             tracing::info!("Loading {} messages into session: {:?}", prev_history.len(), history_preview);
             orchestrator_inst.load_session_history(prev_history).await;
         }
@@ -232,13 +244,51 @@ pub async fn apply_change(
     // secure the path to prevent traversal attacks outside the workspace
     let ws = &config_inst.workspace_dir;
     let target_path = std::path::Path::new(&params.path);
-    
-    // basic sanitization: reject absolute paths and '..' components
+
+    // reject absolute paths and '..' components
     if target_path.is_absolute() || target_path.components().any(|c| c.as_os_str() == "..") {
         return Json(serde_json::json!({"status": "error", "message": "invalid path: path traversal detected"}));
     }
 
     let full_path = ws.join(target_path);
+
+    // canonicalize to resolve symlinks and verify path stays within workspace
+    match full_path.canonicalize() {
+        Ok(resolved) => {
+            // verify resolved path is within workspace
+            match ws.canonicalize() {
+                Ok(ws_resolved) => {
+                    if !resolved.starts_with(&ws_resolved) {
+                        return Json(serde_json::json!({"status": "error", "message": "invalid path: path escapes workspace"}));
+                    }
+                }
+                Err(e) => {
+                    return Json(serde_json::json!({"status": "error", "message": format!("failed to resolve workspace: {}", e)}));
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // file doesn't exist yet - that's ok, we'll create it
+            // verify parent directory is within workspace
+            if let Some(parent) = full_path.parent() {
+                if let Ok(parent_canonical) = parent.canonicalize() {
+                    match ws.canonicalize() {
+                        Ok(ws_resolved) => {
+                            if !parent_canonical.starts_with(&ws_resolved) {
+                                return Json(serde_json::json!({"status": "error", "message": "invalid path: parent directory escapes workspace"}));
+                            }
+                        }
+                        Err(_) => {
+                            // parent might not exist yet, check it manually
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            return Json(serde_json::json!({"status": "error", "message": format!("failed to resolve path: {}", e)}));
+        }
+    }
 
     // ensure the parent directory exists
     if let Some(parent) = full_path.parent() {
