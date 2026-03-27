@@ -58,7 +58,7 @@ impl base_agent {
             "you are in PROPOSAL mode. you must not modify files directly. instead, you should provide your suggested changes in your response using the following format:\n\n[PROPOSE_CHANGE:path/to/file]\n[new content of the file]\n[/PROPOSE_CHANGE]\n\nthe user will review these proposals and choose whether to apply them. you can propose multiple file changes in a single response."
         };
 
-        let tools_instruction = "CRITICAL - TOOL USAGE:\nWhen you need to perform an action (like listing files, reading files, running commands), you MUST output the tool call in JSON format like this:\n```json\n{\"name\": \"list_directory\", \"arguments\": {\"path\": \".\"}}\n```\nYou MUST output ONLY the JSON, nothing else before or after.\nValid tool names: list_directory, read_file, write_file, run_shell_command, grep\nExample for reading a file: ```json\n{\"name\": \"read_file\", \"arguments\": {\"path\": \"Cargo.toml\"}}\n```\nExample for running a command: ```json\n{\"name\": \"run_shell_command\", \"arguments\": {\"command\": \"ls -la\"}}\n```\nIMPORTANT: Output ONLY the JSON code block, no explanations.";
+        let tools_instruction = "RESPONSE RULES (CRITICAL):\n1. Keep responses SHORT - maximum 2-3 sentences\n2. If using tools, output JSON and NOTHING else\n3. Do NOT explain what you are about to do or what you did - just do it or give the answer\n4. NEVER start with \"Based on...\", \"Looking at...\", \"The user wants me to...\" - just answer directly\n5. Valid tools: list_directory, read_file, write_file, run_shell_command, grep\n\nExamples of GOOD responses:\n- \"The project has Cargo.toml, src/, and tests/.\"\n- {\"name\": \"list_directory\", \"arguments\": {\"path\": \".\"}}\n- \"There's a bug in line 42 - missing null check.\"\n\nExamples of BAD responses (do not do these):\n- \"Based on my analysis of the workspace, I can see that...\"\n- \"The user wants me to list files, so let me do that by calling...\"\n- \"Looking at the previous tool results, I notice that...\"";
 
         format!(
             "you are a {}.\n{}\n\nresponsibilities:\n{}\n\n{}",
@@ -95,20 +95,15 @@ impl base_agent {
             // Parse tool calls from response
             let tool_calls = parse_tool_calls(&response);
 
-            // Debug: log the response and detected tool calls
-            tracing::debug!("{} response (iteration {}): {} chars, {} tool calls detected",
-                self.name, iterations, response.len(), tool_calls.len());
-            if !tool_calls.is_empty() {
-                tracing::debug!("Tool calls: {:?}", tool_calls);
-            }
-
             if tool_calls.is_empty() {
-                // No tool calls, this is the final response
-                if final_text.is_empty() {
-                    final_text = response;
-                } else {
-                    final_text.push_str("\n\n");
-                    final_text.push_str(&response);
+                // No tool calls detected - this is the final response
+                // Only use meaningful content (skip verbose explanations)
+                let cleaned = response.trim().to_string();
+                if !cleaned.is_empty() && !final_text.is_empty() {
+                    final_text.push_str("\n");
+                    final_text.push_str(&cleaned);
+                } else if final_text.is_empty() {
+                    final_text = cleaned;
                 }
                 break;
             }
@@ -120,32 +115,35 @@ impl base_agent {
                 tool_results.push(result);
             }
 
-            // Append tool results to history for next iteration
+            // Format tool results for the next iteration
             let tool_results_str = tool_results.iter()
                 .map(|r| {
                     if r.success {
-                        format!("[{}] Success:\n{}", r.name, r.output)
+                        format!("[{}]\n{}", r.name, r.output)
                     } else {
-                        format!("[{}] Error:\n{}", r.name, r.error.as_ref().unwrap_or(&"Unknown error".to_string()))
+                        format!("[{} Error]\n{}", r.name, r.error.as_ref().unwrap_or(&"Unknown error".to_string()))
                     }
                 })
                 .collect::<Vec<_>>()
-                .join("\n\n");
+                .join("\n---\n");
 
             current_history.push_str(&format!(
-                "\n\n[{} used tools]\n{}\n\n[End of tool results]",
-                self.name, tool_results_str
+                "\n\n[Tool Results]\n{}\n\n[End Results]",
+                tool_results_str
             ));
 
-            // Keep track of text content
-            if final_text.is_empty() {
-                // Extract just the text before tool calls
-                let text_only = extract_text_before_tools(&response);
-                final_text = text_only;
-            } else {
-                final_text.push_str("\n\n");
-                final_text.push_str(&extract_text_before_tools(&response));
+            // For display, summarize what was done
+            if !final_text.is_empty() {
+                final_text.push_str("\n");
             }
+            let summaries: Vec<String> = tool_results.iter().map(|r| {
+                if r.success {
+                    format!("{}: done", r.name)
+                } else {
+                    format!("{}: failed", r.name)
+                }
+            }).collect();
+            final_text.push_str(&summaries.join(", "));
         }
 
         Ok((final_text.clone(), final_text))
@@ -185,6 +183,7 @@ impl base_agent {
 }
 
 /// Extract text content before any tool call block
+#[allow(dead_code)]
 fn extract_text_before_tools(response: &str) -> String {
     // Find first tool call marker
     let markers = ["```json", "<tool_call>", "<function>", "read_file(", "write_file(", "run_shell_command(", "list_directory(", "grep("];
