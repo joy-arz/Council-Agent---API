@@ -70,7 +70,7 @@ fn default_gemini_binary() -> String { "gemini-cli".to_string() }
 fn default_qwen_binary() -> String { "qwen-cli".to_string() }
 fn default_workspace() -> PathBuf { std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")) }
 fn default_minimax_model() -> String { "MiniMax-Text-01".to_string() }
-fn default_minimax_base_url() -> String { "https://api.minimax.chat".to_string() }
+fn default_minimax_base_url() -> String { "https://api.minimax.io/v1".to_string() }
 fn default_openrouter_model() -> String { "anthropic/claude-3.5-sonnet".to_string() }
 fn default_openrouter_base_url() -> String { "https://openrouter.ai/api/v1".to_string() }
 

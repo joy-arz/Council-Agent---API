@@ -513,7 +513,7 @@ pub mod factory {
             ProviderType::MiniMax => {
                 if let Some(key) = api_key {
                     let model = model.unwrap_or_else(|| "MiniMax-Text-01".to_string());
-                    let base_url = base_url.unwrap_or_else(|| "https://api.minimax.chat".to_string());
+                    let base_url = base_url.unwrap_or_else(|| "https://api.minimax.io/v1".to_string());
                     Arc::new(minimax_provider::new(key, model, base_url))
                 } else {
                     tracing::warn!("MiniMax provider requested but no API key provided, falling back to CLI");
