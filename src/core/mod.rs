@@ -8,4 +8,4 @@ pub use providers_mod::model_provider;
 pub use orchestrator_mod::{orchestrator, agent_response};
 pub use worktree_mod::WorktreeManager;
 #[allow(unused_imports)]
-pub use tools::{ToolResult, execute_tool};
+pub use tools::{ToolResult, execute_tool, get_tools_json};

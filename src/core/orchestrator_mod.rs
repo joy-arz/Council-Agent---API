@@ -1,4 +1,4 @@
-use crate::agents::{base_agent, judge_agent};
+use crate::agents::{base_agent, judge_agent, agent_result};
 use crate::core::memory::shared_memory;
 use crate::utils::logger_mod::{session_logger, LogEvent};
 use std::sync::Arc;
@@ -15,6 +15,15 @@ pub struct agent_response {
     pub content: String,
     pub terminal_output: String,
     pub round: usize,
+    pub tool_calls: Option<Vec<tool_call_info>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(non_camel_case_types)]
+pub struct tool_call_info {
+    pub name: String,
+    pub status: String,  // "running", "success", "error"
+    pub output: Option<String>,
 }
 
 #[allow(non_camel_case_types)]
@@ -132,28 +141,43 @@ impl orchestrator {
 
             let _ = self.logger.log(&format!("asking {}...", strategist.name)).await;
 
-            let (strategy, terminal) = match strategist.get_response_with_tools(&history).await {
-                Ok((s, t)) => {
+            let result = match strategist.get_response_with_tools(&history).await {
+                Ok(r) => {
                     let _ = self.logger.log(&format!("{} response received.", strategist.name)).await;
-                    (s, t)
+                    r
                 },
                 Err(e) => {
                     let _ = self.logger.log(&format!("error from {}: {}", strategist.name, e)).await;
-                    (format!("(failed to respond due to error: {})", e), format!("error: {}", e))
+                    agent_result {
+                        response: format!("(failed to respond due to error: {})", e),
+                        tool_calls: vec![],
+                    }
                 }
             };
 
             // pin the first strategist response
-            self.memory.lock().await.add_message(strategist.name.clone(), strategy.clone(), round == 1);
+            self.memory.lock().await.add_message(strategist.name.clone(), result.response.clone(), round == 1);
 
             // Log the architect's chat response for web UI display
-            let _ = self.logger.log_agent_message(&strategist.name, round, &strategy).await;
+            let _ = self.logger.log_agent_message(&strategist.name, round, &result.response).await;
+
+            // Convert tool_call_result to tool_call_info for response
+            let tool_infos: Option<Vec<tool_call_info>> = if result.tool_calls.is_empty() {
+                None
+            } else {
+                Some(result.tool_calls.iter().map(|tc| tool_call_info {
+                    name: tc.name.clone(),
+                    status: tc.status.clone(),
+                    output: tc.output.clone(),
+                }).collect())
+            };
 
             if on_message(agent_response {
                 agent: strategist.name.clone(),
-                content: strategy,
-                terminal_output: terminal,
+                content: result.response.clone(),
+                terminal_output: result.response,
                 round,
+                tool_calls: tool_infos,
             }).await.is_err() {
                 let _ = self.logger.log("client disconnected. aborting enclave.").await;
                 return Err(anyhow::anyhow!("client disconnected"));
@@ -183,25 +207,36 @@ impl orchestrator {
                     }
                 };
 
-                let (content, terminal) = match res {
-                    Ok(c) => {
+                let (content, tool_calls) = match res {
+                    Ok(r) => {
                         let _ = self.logger.log(&format!("{} parallel response received.", name)).await;
                         // Log agent chat response for web UI display
-                        let _ = self.logger.log_agent_message(&name, round, &c.0).await;
-                        c
+                        let _ = self.logger.log_agent_message(&name, round, &r.response).await;
+                        // Convert tool_call_result to tool_call_info
+                        let tool_infos: Option<Vec<tool_call_info>> = if r.tool_calls.is_empty() {
+                            None
+                        } else {
+                            Some(r.tool_calls.iter().map(|tc| tool_call_info {
+                                name: tc.name.clone(),
+                                status: tc.status.clone(),
+                                output: tc.output.clone(),
+                            }).collect())
+                        };
+                        (r.response, tool_infos)
                     },
                     Err(e) => {
                         let _ = self.logger.log(&format!("error from {}: {}", name, e)).await;
-                        (format!("(failed to respond due to error: {})", e), format!("error: {}", e))
+                        (format!("(failed to respond due to error: {})", e), None)
                     }
                 };
 
                 self.memory.lock().await.add_message(name.clone(), content.clone(), false);
                 if on_message(agent_response {
                     agent: name,
-                    content,
-                    terminal_output: terminal,
+                    content: content.clone(),
+                    terminal_output: content,
                     round,
+                    tool_calls,
                 }).await.is_err() {
                     let _ = self.logger.log("client disconnected. aborting enclave.").await;
                     return Err(anyhow::anyhow!("client disconnected"));
@@ -255,6 +290,7 @@ impl orchestrator {
             content: final_verdict.clone(),
             terminal_output: terminal,
             round: round + 1,
+            tool_calls: None,
         }).await.is_err() {
             let _ = self.logger.log("client disconnected. aborting enclave.").await;
             return Err(anyhow::anyhow!("client disconnected"));

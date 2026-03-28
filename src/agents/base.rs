@@ -1,7 +1,23 @@
 use std::sync::Arc;
 use std::path::PathBuf;
 use crate::core::model_provider;
+use crate::core::providers_mod::StreamChunk;
 use crate::core::tools::{execute_tool, parse_tool_calls};
+
+#[derive(Debug, Clone)]
+#[allow(non_camel_case_types)]
+pub struct agent_result {
+    pub response: String,
+    pub tool_calls: Vec<tool_call_result>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(non_camel_case_types)]
+pub struct tool_call_result {
+    pub name: String,
+    pub status: String,  // "running", "success", "error"
+    pub output: Option<String>,
+}
 
 #[allow(non_camel_case_types)]
 pub struct base_agent {
@@ -58,7 +74,28 @@ impl base_agent {
             "you are in PROPOSAL mode. you must not modify files directly. instead, you should provide your suggested changes in your response using the following format:\n\n[PROPOSE_CHANGE:path/to/file]\n[new content of the file]\n[/PROPOSE_CHANGE]\n\nthe user will review these proposals and choose whether to apply them. you can propose multiple file changes in a single response."
         };
 
-        let tools_instruction = "RESPONSE RULES (CRITICAL):\n1. Keep responses SHORT - maximum 2-3 sentences\n2. If using tools, output JSON and NOTHING else\n3. Do NOT explain what you are about to do or what you did - just do it or give the answer\n4. NEVER start with \"Based on...\", \"Looking at...\", \"The user wants me to...\" - just answer directly\n5. Valid tools: list_directory, read_file, write_file, run_shell_command, grep\n\nExamples of GOOD responses:\n- \"The project has Cargo.toml, src/, and tests/.\"\n- {\"name\": \"list_directory\", \"arguments\": {\"path\": \".\"}}\n- \"There's a bug in line 42 - missing null check.\"\n\nExamples of BAD responses (do not do these):\n- \"Based on my analysis of the workspace, I can see that...\"\n- \"The user wants me to list files, so let me do that by calling...\"\n- \"Looking at the previous tool results, I notice that...\"";
+        // Include actual tool definitions in JSON format
+        let tools_json = crate::core::tools::get_tools_json();
+
+        let tools_instruction = format!(r#"AVAILABLE TOOLS (MUST use JSON format when calling tools):
+{}
+
+RESPONSE RULES (CRITICAL):
+1. Keep responses SHORT - maximum 2-3 sentences
+2. If using a tool, output ONLY the JSON object and nothing else
+3. Do NOT explain what you are about to do or what you did - just do it
+4. NEVER start with "Based on...", "Looking at...", "The user wants me to..." - just answer directly
+5. Output JSON in this exact format: {{"name": "tool_name", "arguments": {{"param": "value"}}}}
+
+Examples of GOOD responses:
+- "The project has Cargo.toml, src/, and tests/."
+- {{"name": "list_directory", "arguments": {{"path": "."}}}}
+- "There's a bug in line 42 - missing null check."
+
+Examples of BAD responses (do not do these):
+- "Based on my analysis of the workspace, I can see that..."
+- "The user wants me to list files, so let me do that by calling..."
+- "Looking at the previous tool results, I notice that...""#, tools_json);
 
         format!(
             "you are a {}.\n{}\n\nresponsibilities:\n{}\n\n{}",
@@ -67,10 +104,14 @@ impl base_agent {
     }
 
     /// Execute a response with tool calls, continuing until no more tool calls or max iterations reached
-    pub async fn get_response_with_tools(&self, history: &str) -> Result<(String, String), anyhow::Error> {
+    pub async fn get_response_with_tools(&self, history: &str) -> Result<agent_result, anyhow::Error> {
         let mut current_history = history.to_string();
         let mut iterations = 0;
         let mut final_text = String::new();
+        let mut all_tool_calls: Vec<tool_call_result> = Vec::new();
+
+        // Get tools JSON for API providers
+        let tools_json = crate::core::tools::get_tools_json();
 
         loop {
             iterations += 1;
@@ -84,34 +125,78 @@ impl base_agent {
                 current_history, self.name
             );
 
-            let (response, _raw) = self.provider.call_model(
+            // Use streaming API to get real-time tool events
+            let mut rx = self.provider.call_model_streaming(
                 &self.model_name,
                 &prompt,
                 Some(&self.build_full_system_prompt()),
                 self.temperature,
                 self.max_tokens,
+                Some(&tools_json),
             ).await?;
 
-            // Parse tool calls from response
-            let tool_calls = parse_tool_calls(&response);
+            // Streaming state
+            let mut current_tool_input = String::new();
+            let mut text_buffer = String::new();
+            let mut tool_calls_from_stream: Vec<(String, String)> = Vec::new(); // (name, input)
 
-            if tool_calls.is_empty() {
-                // No tool calls detected - this is the final response
-                // Only use meaningful content (skip verbose explanations)
-                let cleaned = response.trim().to_string();
-                if !cleaned.is_empty() && !final_text.is_empty() {
-                    final_text.push_str("\n");
-                    final_text.push_str(&cleaned);
-                } else if final_text.is_empty() {
-                    final_text = cleaned;
+            // Process stream
+            while let Some(chunk) = rx.recv().await {
+                match chunk {
+                    StreamChunk::TextDelta(text) => {
+                        text_buffer.push_str(&text);
+                    }
+                    StreamChunk::ToolStart { name: _, .. } => {
+                        // Tool started - we'll capture the name in ToolEnd
+                        current_tool_input.clear();
+                    }
+                    StreamChunk::ToolInputDelta(delta) => {
+                        current_tool_input.push_str(&delta);
+                    }
+                    StreamChunk::ToolEnd { name, input, .. } => {
+                        let final_input = if input.is_empty() { current_tool_input.clone() } else { input };
+                        tool_calls_from_stream.push((name, final_input));
+                        current_tool_input.clear();
+                    }
+                    StreamChunk::Usage { .. } => {}
+                    StreamChunk::Done => break,
+                    StreamChunk::Error(e) => {
+                        tracing::warn!("Streaming error: {}", e);
+                        break;
+                    }
                 }
+            }
+
+            // Add accumulated text to final text
+            let trimmed_text = text_buffer.trim();
+            if !trimmed_text.is_empty() {
+                if !final_text.is_empty() {
+                    final_text.push('\n');
+                }
+                final_text.push_str(trimmed_text);
+            }
+
+            // Execute tool calls found in stream
+            if tool_calls_from_stream.is_empty() {
+                // No tool calls - this is the final response
                 break;
             }
 
-            // Execute tool calls and collect results
+            // Execute each tool and collect results
             let mut tool_results = Vec::new();
-            for call in &tool_calls {
-                let result = execute_tool(call, &self.workspace_dir).await;
+            for (name, input) in &tool_calls_from_stream {
+                let args: serde_json::Map<String, serde_json::Value> = if input.is_empty() {
+                    serde_json::Map::new()
+                } else {
+                    serde_json::from_str(input).unwrap_or_else(|_| serde_json::Map::new())
+                };
+                
+                let call = crate::core::tools::ToolCall {
+                    name: name.clone(),
+                    arguments: serde_json::Value::Object(args),
+                };
+                
+                let result = execute_tool(&call, &self.workspace_dir).await;
                 tool_results.push(result);
             }
 
@@ -132,38 +217,189 @@ impl base_agent {
                 tool_results_str
             ));
 
+            // Build tool info for display
+            for (i, result) in tool_results.iter().enumerate() {
+                all_tool_calls.push(tool_call_result {
+                    name: tool_calls_from_stream[i].0.clone(),
+                    status: if result.success { "success".to_string() } else { "error".to_string() },
+                    output: Some(if result.success { result.output.clone() } else { result.error.clone().unwrap_or_default() }),
+                });
+            }
+
             // For display, summarize what was done
             if !final_text.is_empty() {
-                final_text.push_str("\n");
+                final_text.push('\n');
             }
             let summaries: Vec<String> = tool_results.iter().map(|r| {
                 if r.success {
-                    format!("{}: done", r.name)
+                    format!("✓ {}", r.name)
                 } else {
-                    format!("{}: failed", r.name)
+                    format!("✗ {}", r.name)
                 }
             }).collect();
-            final_text.push_str(&summaries.join(", "));
+            final_text.push_str(&summaries.join(" "));
         }
 
-        Ok((final_text.clone(), final_text))
+        Ok(agent_result {
+            response: final_text,
+            tool_calls: all_tool_calls,
+        })
+    }
+
+    /// Execute a response with tool calls using streaming API
+    /// Tool calls are executed as they arrive from the stream
+    pub async fn get_response_with_tools_streaming<F>(
+        &self,
+        history: &str,
+        mut on_chunk: F,
+    ) -> Result<agent_result, anyhow::Error>
+    where
+        F: FnMut(String) + Send,
+    {
+        let mut current_history = history.to_string();
+        let mut iterations = 0;
+        let mut final_text = String::new();
+        let mut all_tool_calls: Vec<tool_call_result> = Vec::new();
+
+        let tools_json = crate::core::tools::get_tools_json();
+
+        loop {
+            iterations += 1;
+            if iterations > self.max_tool_iterations {
+                final_text.push_str("\n[Max tool iterations reached]");
+                break;
+            }
+
+            let prompt = format!(
+                "current conversation history:\n{}\n\nrespond as the {}. use tools if needed to complete the task.",
+                current_history, self.name
+            );
+
+            let mut rx = self.provider.call_model_streaming(
+                &self.model_name,
+                &prompt,
+                Some(&self.build_full_system_prompt()),
+                self.temperature,
+                self.max_tokens,
+                Some(&tools_json),
+            ).await?;
+
+            // Streaming state
+            let mut _current_tool_id: Option<String> = None;
+            let mut _current_tool_name: Option<String> = None;
+            let mut current_tool_input: String = String::new();
+            let mut text_buffer = String::new();
+            let mut _tool_started = false;
+
+            // Process stream
+            while let Some(chunk) = rx.recv().await {
+                match chunk {
+                    StreamChunk::TextDelta(text) => {
+                        text_buffer.push_str(&text);
+                        on_chunk(text);
+                    }
+                    StreamChunk::ToolStart { id, name } => {
+                        _current_tool_id = Some(id);
+                        _current_tool_name = Some(name);
+                        _tool_started = true;
+                    }
+                    StreamChunk::ToolInputDelta(delta) => {
+                        current_tool_input.push_str(&delta);
+                    }
+                    StreamChunk::ToolEnd { id: _, name, input } => {
+                        // Execute the tool immediately
+                        let tool_input = if input.is_empty() { current_tool_input.clone() } else { input };
+                        
+                        let call = crate::core::tools::ToolCall {
+                            name: name.clone(),
+                            arguments: if tool_input.is_empty() {
+                                serde_json::Value::Object(serde_json::Map::new())
+                            } else {
+                                serde_json::from_str(&tool_input).unwrap_or(serde_json::Value::Null)
+                            },
+                        };
+                        
+                        let result = execute_tool(&call, &self.workspace_dir).await;
+                        
+                        all_tool_calls.push(tool_call_result {
+                            name: name.clone(),
+                            status: if result.success { "success".to_string() } else { "error".to_string() },
+                            output: Some(if result.success { result.output.clone() } else { result.error.clone().unwrap_or_default() }),
+                        });
+
+                        // Add result to history for next iteration
+                        let tool_result_text = if result.success { result.output.clone() } else { result.error.clone().unwrap_or_else(|| "Unknown error".to_string()) };
+                        current_history.push_str(&format!(
+                            "\n\n[Tool: {}]\n{}\n[End Tool]",
+                            name,
+                            tool_result_text
+                        ));
+
+                        // Clear streaming state
+                        _current_tool_id = None;
+                        _current_tool_name = None;
+                        current_tool_input.clear();
+                        _tool_started = false;
+                    }
+                    StreamChunk::Usage { .. } => {
+                        // Usage stats - could be logged
+                    }
+                    StreamChunk::Done => {
+                        break;
+                    }
+                    StreamChunk::Error(e) => {
+                        tracing::error!("Streaming error: {}", e);
+                        break;
+                    }
+                }
+            }
+
+            // After stream ends, check if we have tool calls to process
+            if all_tool_calls.len() == iterations - 1 {
+                // No new tool calls this iteration - this is the final response
+                let cleaned = text_buffer.trim().to_string();
+                if !cleaned.is_empty() {
+                    if !final_text.is_empty() {
+                        final_text.push('\n');
+                        final_text.push_str(&cleaned);
+                    } else {
+                        final_text = cleaned;
+                    }
+                }
+                break;
+            } else if iterations > all_tool_calls.len() {
+                // We had tool calls but they weren't completed
+                break;
+            }
+        }
+
+        Ok(agent_result {
+            response: final_text,
+            tool_calls: all_tool_calls,
+        })
     }
 
     /// Simple response without tool execution
     #[allow(dead_code)]
-    pub async fn get_response(&self, history: &str) -> Result<(String, String), anyhow::Error> {
+    pub async fn get_response(&self, history: &str) -> Result<agent_result, anyhow::Error> {
         let prompt = format!(
             "current conversation history:\n{}\n\nrespond as the {}. provide your actual response, actions taken, or findings - not just a plan of what you will do.",
             history, self.name
         );
 
-        self.provider.call_model(
+        let (response, _) = self.provider.call_model(
             &self.model_name,
             &prompt,
             Some(&self.build_full_system_prompt()),
             self.temperature,
             self.max_tokens,
-        ).await
+            None,  // No tools for simple responses
+        ).await?;
+
+        Ok(agent_result {
+            response,
+            tool_calls: vec![],
+        })
     }
 
     pub fn clone_for_parallel(&self) -> Self {

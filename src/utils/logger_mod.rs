@@ -3,6 +3,40 @@ use tokio::io::AsyncWriteExt;
 use std::path::PathBuf;
 use chrono::Local;
 use serde::Serialize;
+use regex::Regex;
+use once_cell::sync::Lazy;
+
+/// Patterns to redact from logs for security
+static API_KEY_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)(api[_-]?key|apikey|bearer|token|secret)["\s:=]+["']?[a-zA-Z0-9_-]{20,}["']?"#).unwrap()
+});
+static PASSWORD_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)(password|passwd|pwd)["\s:=]+["']?[^\s"']{4,}["']?"#).unwrap()
+});
+static PRIVATE_KEY_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----").unwrap()
+});
+
+/// Redact sensitive information from log messages
+fn redact_sensitive_data(message: &str) -> String {
+    let mut redacted = message.to_string();
+    
+    // Redact API keys and tokens
+    redacted = API_KEY_PATTERN.replace_all(&redacted, "$1=[REDACTED]").to_string();
+    
+    // Redact passwords
+    redacted = PASSWORD_PATTERN.replace_all(&redacted, "$1=[REDACTED]").to_string();
+    
+    // Redact private keys (replace entire block marker)
+    if PRIVATE_KEY_PATTERN.is_match(&redacted) {
+        redacted = redacted.replace("-----BEGIN PRIVATE KEY-----", "[PRIVATE KEY REDACTED]");
+        redacted = redacted.replace("-----BEGIN RSA PRIVATE KEY-----", "[PRIVATE KEY REDACTED]");
+        redacted = redacted.replace("-----BEGIN EC PRIVATE KEY-----", "[PRIVATE KEY REDACTED]");
+        redacted = redacted.replace("-----BEGIN OPENSSH PRIVATE KEY-----", "[PRIVATE KEY REDACTED]");
+    }
+    
+    redacted
+}
 
 /// JSONL event types for structured logging
 #[derive(Debug, Serialize)]
@@ -91,7 +125,7 @@ impl session_logger {
         };
 
         file.write_all(entry.as_bytes()).await?;
-        file.sync_all().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        file.sync_all().await.map_err(std::io::Error::other)?;
 
         Ok(())
     }

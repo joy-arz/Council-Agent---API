@@ -55,20 +55,24 @@ impl session_store {
         }
     }
 
-    async fn save_to_disk(&self) -> Result<(), anyhow::Error> {
-        let path = self.get_history_path();
-        let sessions = self.sessions.lock().await;
-        let data = serde_json::to_string_pretty(&*sessions)?;
-        tokio::fs::write(path, data).await?;
-        Ok(())
-    }
-
     pub async fn add_message(&self, session_id: &str, msg: agent_response) {
-        {
-            let mut sessions: tokio::sync::MutexGuard<'_, HashMap<String, Vec<agent_response>>> = self.sessions.lock().await;
-            sessions.entry(session_id.to_string()).or_default().push(msg);
+        let mut sessions = self.sessions.lock().await;
+        sessions.entry(session_id.to_string()).or_default().push(msg);
+        
+        // Save while still holding the lock to prevent race conditions
+        let data = serde_json::to_string_pretty(&*sessions)
+            .unwrap_or_else(|e| {
+                eprintln!("Warning: failed to serialize session: {}", e);
+                String::new()
+            });
+        
+        if data.is_empty() {
+            return;
         }
-        if let Err(e) = self.save_to_disk().await {
+        
+        drop(sessions); // Release lock before I/O
+        
+        if let Err(e) = tokio::fs::write(self.get_history_path(), data).await {
             eprintln!("Warning: failed to persist session: {}", e);
         }
     }
@@ -104,11 +108,23 @@ impl session_store {
     }
 
     pub async fn delete_session(&self, session_id: &str) -> bool {
-        let mut sessions: tokio::sync::MutexGuard<'_, HashMap<String, Vec<agent_response>>> = self.sessions.lock().await;
-        if sessions.remove(session_id).is_some() {
+        let mut sessions = self.sessions.lock().await;
+        let removed = sessions.remove(session_id).is_some();
+        
+        if removed {
+            // Save while still holding the lock
+            let data = serde_json::to_string_pretty(&*sessions)
+                .unwrap_or_else(|e| {
+                    eprintln!("Warning: failed to serialize session: {}", e);
+                    String::new()
+                });
+            
             drop(sessions);
-            if let Err(e) = self.save_to_disk().await {
-                eprintln!("Warning: failed to persist session after deletion: {}", e);
+            
+            if !data.is_empty() {
+                if let Err(e) = tokio::fs::write(self.get_history_path(), data).await {
+                    eprintln!("Warning: failed to persist session after deletion: {}", e);
+                }
             }
             true
         } else {

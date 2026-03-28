@@ -148,6 +148,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 }
 
 /// Convert tool definitions to JSON for system prompt
+/// Note: MiniMax uses "input_schema" instead of "parameters" for Anthropic compatibility
 #[allow(dead_code)]
 pub fn get_tools_json() -> String {
     let tools = get_tool_definitions();
@@ -156,14 +157,15 @@ pub fn get_tools_json() -> String {
         if i > 0 {
             json.push_str(",\n");
         }
-        json.push_str(&format!("{{ \"name\": \"{}\", \"description\": \"{}\", \"parameters\": {{", tool.name, tool.description));
-        let mut params = Vec::new();
-        for param in &tool.parameters {
-            params.push(format!(
+        json.push_str(&format!("{{ \"name\": \"{}\", \"description\": \"{}\", \"input_schema\": {{", tool.name, tool.description));
+        
+        let params: Vec<String> = tool.parameters.iter().map(|param| {
+            format!(
                 "\"{}\": {{ \"type\": \"{}\", \"description\": \"{}\", \"required\": {} }}",
                 param.name, param.param_type, param.description, param.required
-            ));
-        }
+            )
+        }).collect();
+        
         json.push_str(&params.join(", "));
         json.push_str("}}");
         json.push('}');
@@ -195,7 +197,7 @@ pub async fn execute_tool(
     }
 }
 
-async fn execute_read_file(args: &serde_json::Value, workspace_dir: &PathBuf) -> ToolResult {
+async fn execute_read_file(args: &serde_json::Value, workspace_dir: &std::path::Path) -> ToolResult {
     // Accept both "path" and "absolute_path"
     let path = args.get("path")
         .or_else(|| args.get("absolute_path"))
@@ -216,17 +218,72 @@ async fn execute_read_file(args: &serde_json::Value, workspace_dir: &PathBuf) ->
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
     let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
-    let full_path = workspace_dir.join(path);
-    if !full_path.exists() {
+    // Security: reject absolute paths and path traversal attempts
+    let path_obj = std::path::Path::new(path);
+    if path_obj.is_absolute() {
         return ToolResult {
             name: "read_file".to_string(),
             success: false,
             output: String::new(),
-            error: Some(format!("File not found: {}", path)),
+            error: Some("Security violation: absolute paths not allowed".to_string()),
+        };
+    }
+    
+    // Check for path traversal attempts
+    if path_obj.components().any(|c| c.as_os_str() == "..") {
+        return ToolResult {
+            name: "read_file".to_string(),
+            success: false,
+            output: String::new(),
+            error: Some("Security violation: path traversal not allowed".to_string()),
         };
     }
 
-    match fs::read_to_string(&full_path).await {
+    let full_path = workspace_dir.join(path);
+    
+    // Canonicalize and verify path stays within workspace
+    let resolved_path = match full_path.canonicalize() {
+        Ok(p) => p,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return ToolResult {
+                name: "read_file".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("File not found: {}", path)),
+            };
+        }
+        Err(e) => {
+            return ToolResult {
+                name: "read_file".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("Failed to resolve path: {}", e)),
+            };
+        }
+    };
+    
+    let workspace_resolved = match workspace_dir.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            return ToolResult {
+                name: "read_file".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("Workspace resolution error: {}", e)),
+            };
+        }
+    };
+    
+    if !resolved_path.starts_with(&workspace_resolved) {
+        return ToolResult {
+            name: "read_file".to_string(),
+            success: false,
+            output: String::new(),
+            error: Some("Security violation: path escapes workspace".to_string()),
+        };
+    }
+
+    match fs::read_to_string(&resolved_path).await {
         Ok(content) => {
             let lines: Vec<&str> = content.lines().collect();
             let total_lines = lines.len();
@@ -255,7 +312,7 @@ async fn execute_read_file(args: &serde_json::Value, workspace_dir: &PathBuf) ->
     }
 }
 
-async fn execute_write_file(args: &serde_json::Value, workspace_dir: &PathBuf) -> ToolResult {
+async fn execute_write_file(args: &serde_json::Value, workspace_dir: &std::path::Path) -> ToolResult {
     let path = match args.get("path").and_then(|v| v.as_str()) {
         Some(p) => p,
         None => {
@@ -280,10 +337,70 @@ async fn execute_write_file(args: &serde_json::Value, workspace_dir: &PathBuf) -
         }
     };
 
+    // Security: reject absolute paths and path traversal attempts
+    let path_obj = std::path::Path::new(path);
+    if path_obj.is_absolute() {
+        return ToolResult {
+            name: "write_file".to_string(),
+            success: false,
+            output: String::new(),
+            error: Some("Security violation: absolute paths not allowed".to_string()),
+        };
+    }
+    
+    if path_obj.components().any(|c| c.as_os_str() == "..") {
+        return ToolResult {
+            name: "write_file".to_string(),
+            success: false,
+            output: String::new(),
+            error: Some("Security violation: path traversal not allowed".to_string()),
+        };
+    }
+
     let full_path = workspace_dir.join(path);
 
     // Create parent directories if needed
     if let Some(parent) = full_path.parent() {
+        // Verify parent stays within workspace before creating
+        let parent_resolved = if parent.exists() {
+            match parent.canonicalize() {
+                Ok(p) => p,
+                Err(e) => {
+                    return ToolResult {
+                        name: "write_file".to_string(),
+                        success: false,
+                        output: String::new(),
+                        error: Some(format!("Failed to resolve parent directory: {}", e)),
+                    };
+                }
+            }
+        } else {
+            // Parent doesn't exist yet - verify the path components are safe
+            // by checking the workspace prefix
+            workspace_dir.join(parent)
+        };
+        
+        let workspace_resolved = match workspace_dir.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                return ToolResult {
+                    name: "write_file".to_string(),
+                    success: false,
+                    output: String::new(),
+                    error: Some(format!("Workspace resolution error: {}", e)),
+                };
+            }
+        };
+        
+        if !parent_resolved.starts_with(&workspace_resolved) {
+            return ToolResult {
+                name: "write_file".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some("Security violation: path escapes workspace".to_string()),
+            };
+        }
+        
         if !parent.exists() {
             if let Err(e) = fs::create_dir_all(parent).await {
                 return ToolResult {
@@ -312,6 +429,49 @@ async fn execute_write_file(args: &serde_json::Value, workspace_dir: &PathBuf) -
     }
 }
 
+/// Dangerous command patterns to block
+const DANGEROUS_COMMAND_PATTERNS: &[&str] = &[
+    "rm -rf /",
+    "rm -rf /*",
+    "mkfs",
+    "dd if=/dev/zero",
+    ":(){:|:&};:",
+    "> /dev/",
+    "curl * | *sh",
+    "wget * | *sh",
+    "chmod -R 777 /",
+    "chown -R",
+    "sudo rm",
+    "shutdown",
+    "reboot",
+    "init 0",
+    "telinit 6",
+    "echo * > /etc/",
+    "echo * > /proc/",
+    "echo * > /sys/",
+    "fork() {",
+    "mv /* /dev/null",
+    "cp -rf / /*",
+];
+
+/// Check if command contains dangerous patterns
+fn is_command_dangerous(command: &str) -> Option<&'static str> {
+    let cmd_lower = command.to_lowercase();
+    for pattern in DANGEROUS_COMMAND_PATTERNS {
+        if cmd_lower.contains(pattern) {
+            return Some(*pattern);
+        }
+    }
+    // Also check for attempts to access sensitive paths
+    if command.contains("/etc/passwd") || 
+       command.contains("/etc/shadow") ||
+       command.contains("~/.ssh") ||
+       command.contains("/root/") {
+        return Some("sensitive path access");
+    }
+    None
+}
+
 async fn execute_shell_command(args: &serde_json::Value, workspace_dir: &PathBuf) -> ToolResult {
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(c) => c,
@@ -325,52 +485,74 @@ async fn execute_shell_command(args: &serde_json::Value, workspace_dir: &PathBuf
         }
     };
 
-    let _timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
-
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(workspace_dir)
-        .output()
-        .await;
-
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let status = out.status;
-
-            let output = if !stdout.is_empty() {
-                format!("=== STDOUT ===\n{}\n", stdout)
-            } else {
-                String::new()
-            }.to_string();
-
-            let output = if !stderr.is_empty() {
-                format!("{}=== STDERR ===\n{}\n", output, stderr)
-            } else {
-                output
-            };
-
-            let output = format!("{}{} exited with code {}",
-                output,
-                if status.success() { "Command succeeded" } else { "Command failed" },
-                status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string())
-            );
-
-            ToolResult {
-                name: "run_shell_command".to_string(),
-                success: status.success(),
-                output,
-                error: None,
-            }
-        }
-        Err(e) => ToolResult {
+    // Security: Block dangerous commands
+    if let Some(pattern) = is_command_dangerous(command) {
+        return ToolResult {
             name: "run_shell_command".to_string(),
             success: false,
             output: String::new(),
-            error: Some(format!("Failed to execute command: {}", e)),
-        },
+            error: Some(format!("Security violation: command blocked due to dangerous pattern '{}'", pattern)),
+        };
+    }
+
+    let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
+
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c")
+       .arg(command)
+       .current_dir(workspace_dir);
+    
+    // Execute with timeout
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        cmd.output()
+    ).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => {
+            return ToolResult {
+                name: "run_shell_command".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("Failed to execute command: {}", e)),
+            };
+        }
+        Err(_) => {
+            return ToolResult {
+                name: "run_shell_command".to_string(),
+                success: false,
+                output: String::new(),
+                error: Some(format!("Command timed out after {} seconds", timeout_secs)),
+            };
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let status = output.status;
+
+    let out_str = if !stdout.is_empty() {
+        format!("=== STDOUT ===\n{}\n", stdout)
+    } else {
+        String::new()
+    };
+
+    let out_str = if !stderr.is_empty() {
+        format!("{}=== STDERR ===\n{}\n", out_str, stderr)
+    } else {
+        out_str
+    };
+
+    let out_str = format!("{}{} exited with code {}",
+        out_str,
+        if status.success() { "Command succeeded" } else { "Command failed" },
+        status.code().map(|c: i32| c.to_string()).unwrap_or_else(|| "unknown".to_string())
+    );
+
+    ToolResult {
+        name: "run_shell_command".to_string(),
+        success: status.success(),
+        output: out_str,
+        error: None,
     }
 }
 

@@ -2,6 +2,8 @@
 
 use super::ToolCall;
 use std::collections::HashSet;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 /// Parse tool calls from model response text
 /// Supports:
@@ -110,8 +112,10 @@ fn parse_json_blocks(response: &str) -> Vec<ToolCall> {
     }
 
     // Also look for raw JSON objects with name and arguments
-    let raw_regex = regex::Regex::new(r#"\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"arguments"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})[^{}]*\}"#).unwrap();
-    for cap in raw_regex.captures_iter(response) {
+    static RAW_REGEX: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r#"\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"arguments"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})[^{}]*\}"#).unwrap()
+    });
+    for cap in RAW_REGEX.captures_iter(response) {
         if let (Some(name_m), Some(args_m)) = (cap.get(1), cap.get(2)) {
             let name = name_m.as_str().to_string();
             let args_str = format!("{{{}}}", args_m.as_str());
@@ -209,8 +213,10 @@ pub fn extract_text_content(response: &str) -> String {
     }
 
     // Remove XML tool call tags
-    let xml_regex = regex::Regex::new(r"<tool_call>\s*\{[^}]+\}\s*</tool_call>").unwrap();
-    result = xml_regex.replace_all(&result, "").to_string();
+    static XML_REGEX: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"<tool_call>\s*\{[^}]+\}\s*</tool_call>").unwrap()
+    });
+    result = XML_REGEX.replace_all(&result, "").to_string();
 
     // Remove plain function call patterns
     let tool_names = ["read_file", "write_file", "run_shell_command", "list_directory", "grep"];

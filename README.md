@@ -32,7 +32,8 @@ The system uses a structured deliberation process where different specialized ag
 ## Features
 
 - **Modern OLED Dashboard**: A minimalist, deep-black interface designed for high-density engineering workflows.
-- **Active Engineering Partners**: Agents don't just talk; they **act**. In autonomous mode, they use tools to edit files, refactor code, and run shell commands.
+- **Active Engineering Partners**: Agents don't just talk; they **act**. In autonomous mode, they use tools to read files, write files, run commands, and modify the codebase.
+- **MiniMax Tool Support**: Native tool execution via MiniMax's Anthropic-compatible API (`input_schema` format). Tools include: `list_directory`, `read_file`, `write_file`, `run_shell_command`, `grep`.
 - **Propose & Review**: In non-autonomous mode, agents suggest file changes that can be reviewed and applied with a single click.
 - **Auto Rounds**: Agents automatically determine when to stop deliberation (enabled by default). Toggle off to use fixed round limits.
 - **Workspace Folder Selection**: Browse and select your project directory directly from the web UI using a native folder picker (supports macOS and Windows).
@@ -43,6 +44,7 @@ The system uses a structured deliberation process where different specialized ag
 - **Autonomous Mode Toggle**: A safety switch that grants agents permission to use their internal tools (like `write_file`) to modify the local workspace.
 - **Real-Time Streaming**: Watch the enclave's deliberation and file edits in real-time via SSE.
 - **Graceful Shutdown**: Server shuts down cleanly on Ctrl+C, completing in-flight requests.
+- **SSE Streaming**: True Server-Sent Events streaming for real-time AI output and tool execution feedback.
 
 ---
 

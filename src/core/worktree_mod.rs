@@ -73,27 +73,85 @@ impl WorktreeManager {
 
     /// Remove a worktree when session ends
     pub async fn remove_worktree(&self, worktree: &Worktree) -> Result<(), anyhow::Error> {
+        let mut removal_success = false;
+        let mut errors = Vec::new();
+
         // Remove worktree using git
-        let output = Command::new("git")
+        match Command::new("git")
             .args(["worktree", "remove", "--force", &worktree.path.to_string_lossy()])
             .current_dir(&self.workspace_dir)
-            .output()?;
-
-        if !output.status.success() {
-            // Try direct removal if git command fails
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!("git worktree remove failed: {}, trying direct removal", stderr);
+            .output()
+        {
+            Ok(output) => {
+                if output.status.success() {
+                    removal_success = true;
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    errors.push(format!("git worktree remove failed: {}", stderr));
+                }
+            }
+            Err(e) => {
+                errors.push(format!("failed to execute git worktree remove: {}", e));
+            }
         }
 
-        // Also remove the branch
-        let _ = Command::new("git")
+        // Remove the branch
+        match Command::new("git")
             .args(["branch", "-D", &worktree.branch])
             .current_dir(&self.workspace_dir)
-            .output();
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    // Branch might not exist, so just log at debug level
+                    tracing::debug!("git branch delete failed (may not exist): {}", stderr);
+                }
+            }
+            Err(e) => {
+                errors.push(format!("failed to execute git branch delete: {}", e));
+            }
+        }
 
-        // Remove the directory if it still exists
-        if worktree.path.exists() {
-            fs::remove_dir_all(&worktree.path).await?;
+        // Retry logic for directory removal (handles race conditions with git cleanup)
+        let mut retry_count = 0;
+        const MAX_RETRIES: u32 = 3;
+        while worktree.path.exists() && retry_count < MAX_RETRIES {
+            // Wait with exponential backoff before retry
+            let delay_ms = 100 * (2u32.pow(retry_count));
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms as u64)).await;
+            
+            match fs::remove_dir_all(&worktree.path).await {
+                Ok(_) => {
+                    tracing::info!("Cleaned up worktree directory: {:?}", worktree.path);
+                    removal_success = true;
+                    break;
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count < MAX_RETRIES {
+                        tracing::debug!("Worktree directory removal attempt {} failed: {}, retrying...", retry_count, e);
+                    } else {
+                        errors.push(format!("failed to remove worktree directory after {} attempts: {}", retry_count, e));
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Log warnings for any errors encountered
+        if !errors.is_empty() {
+            for err in &errors {
+                tracing::warn!("Worktree cleanup: {}", err);
+            }
+            // Return error only if directory still exists (cleanup truly failed)
+            if worktree.path.exists() {
+                return Err(anyhow::anyhow!("worktree cleanup failed: {}", errors.join("; ")));
+            }
+        }
+
+        if removal_success || !worktree.path.exists() {
+            tracing::info!("Worktree {} cleaned up successfully", worktree.name);
         }
 
         Ok(())

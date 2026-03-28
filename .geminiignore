@@ -1,0 +1,29 @@
+# Session and state files
+.enclave_worktrees/
+.enclave_history.json
+.council_history.json
+.enclave_state.md
+.council_state.md
+
+# Logs
+last_session_log.md
+last_session_log.jsonl
+*.jsonl
+
+# Editor and IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug logs
+.qwen/

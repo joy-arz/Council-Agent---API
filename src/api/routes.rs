@@ -100,7 +100,7 @@ pub async fn test_cli(
         false, // not autonomous for test
     );
 
-    match provider.call_model("test", "ping", Some("respond with 'pong' if you are working"), 0.7, 10).await {
+    match provider.call_model("test", "ping", Some("respond with 'pong' if you are working"), 0.7, 10, None).await {
         Ok(_) => Json(serde_json::json!({"status": "success"})),
         Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string()})),
     }
@@ -244,6 +244,7 @@ pub async fn handle_enclave(
             content: query.clone(),
             terminal_output: String::new(),
             round: 0,
+            tool_calls: None,
         };
         store_clone.add_message(&session_id, user_query_response).await;
 

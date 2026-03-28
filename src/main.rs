@@ -70,10 +70,10 @@ async fn run_server(cfg: Arc<config>, store: Arc<session_store>) -> Result<(), a
 
     // graceful shutdown on SIGINT/SIGTERM
     let shutdown_signal = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-        tracing::info!("shutdown signal received, stopping server...");
+        match tokio::signal::ctrl_c().await {
+            Ok(_) => tracing::info!("shutdown signal received, stopping server..."),
+            Err(e) => tracing::warn!("failed to install signal handler: {}, continuing anyway...", e),
+        }
     };
 
     axum::serve(listener, app)

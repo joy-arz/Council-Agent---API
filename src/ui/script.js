@@ -457,7 +457,7 @@ function start_debate(query, session_id, autonomous, autoRounds, workspace, roun
         const data = JSON.parse(event.data);
         last_message_time = Date.now();
         show_loading(false);
-        append_message(data.agent, data.content, data.round, data.terminal_output);
+        append_message(data.agent, data.content, data.round, data.terminal_output, data.tool_calls);
         update_status(data.agent + " is speaking...", true);
         show_loading(true, `Waiting for response...`);
 
@@ -512,28 +512,28 @@ async function restore_session(session_id) {
     }
 }
 
-function append_message(agent, content, round, terminal_output = "") {
+function append_message(agent, content, round, terminal_output = "", tool_calls = null) {
     const card = document.createElement('div');
     const agent_lower = agent.toLowerCase().replace(/ /g, '.');
     card.className = "card " + agent_lower;
 
     const header = document.createElement('div');
     header.className = 'card-header';
-    
+
     const agent_info = document.createElement('div');
     agent_info.className = 'agent-info';
-    
+
     const icon = document.createElement('div');
     icon.className = 'agent-icon';
     icon.textContent = agent.charAt(0).toUpperCase();
-    
+
     const name_span = document.createElement('span');
     name_span.className = 'agent-name';
     name_span.textContent = agent;
-    
+
     agent_info.appendChild(icon);
     agent_info.appendChild(name_span);
-    
+
     const round_tag = document.createElement('span');
     round_tag.className = 'round-tag';
     round_tag.textContent = round === 0 ? "Initial" : "Round " + round;
@@ -548,7 +548,20 @@ function append_message(agent, content, round, terminal_output = "") {
 
     const body = document.createElement('div');
     body.className = 'card-content';
-    
+
+    // Build tool indicators string if tools were used
+    let tool_indicators = '';
+    if (tool_calls && tool_calls.length > 0) {
+        const parts = tool_calls.map(tc => {
+            if (tc.status === 'success') {
+                return `<span class="tool-indicator success">✓ ${escapeHtml(tc.name)}</span>`;
+            } else {
+                return `<span class="tool-indicator error">✗ ${escapeHtml(tc.name)}</span>`;
+            }
+        });
+        tool_indicators = parts.join('') + '<br>';
+    }
+
     // check if content is json (from judge)
     try {
         if (agent_lower === 'lead.engineer') {
@@ -582,7 +595,7 @@ function append_message(agent, content, round, terminal_output = "") {
                 </div>
             `;
         } else if (agent_lower === 'user') {
-            body.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+            body.innerHTML = tool_indicators + escapeHtml(content).replace(/\n/g, '<br>');
         } else {
             // Parse proposals in non-autonomous mode
             const proposals = parse_proposals(content);
@@ -592,7 +605,7 @@ function append_message(agent, content, round, terminal_output = "") {
                     clean_content = clean_content.replace(p.raw, "");
                 });
 
-                body.innerHTML = escapeHtml(clean_content.trim()).replace(/\n/g, '<br>');
+                body.innerHTML = tool_indicators + escapeHtml(clean_content.trim()).replace(/\n/g, '<br>');
 
                 proposals.forEach(p => {
                     const prop_div = document.createElement('div');
@@ -619,11 +632,11 @@ function append_message(agent, content, round, terminal_output = "") {
                     body.appendChild(prop_div);
                 });
             } else {
-                body.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+                body.innerHTML = tool_indicators + escapeHtml(content).replace(/\n/g, '<br>');
             }
         }
     } catch (e) {
-        body.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+        body.innerHTML = tool_indicators + escapeHtml(content).replace(/\n/g, '<br>');
     }
 
     // Add terminal output if present (collapsible)

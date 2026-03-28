@@ -314,6 +314,7 @@ dependencies = [
  "dotenvy",
  "envy",
  "futures",
+ "once_cell",
  "regex",
  "reqwest",
  "serde",

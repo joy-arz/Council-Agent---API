@@ -34,6 +34,7 @@ impl judge_agent {
             Some(&self.base.build_full_system_prompt()),
             self.base.temperature,
             self.base.max_tokens,
+            None,  // Judge doesn't use tools
         ).await
     }
 }
