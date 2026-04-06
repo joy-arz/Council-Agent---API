@@ -143,23 +143,33 @@ impl session_store {
 
     /// Add a message to a session
     pub async fn add_message(&self, session_id: &str, msg: agent_response) {
-        let mut sessions = self.sessions.lock().await;
+        // Clone data needed for serialization before acquiring lock
+        let history_path = self.get_history_path();
 
-        if let Some(session) = sessions.get_mut(session_id) {
-            session.messages.push(msg.clone());
-            session.meta.updated_at = Utc::now();
+        let (needs_save, messages_count) = {
+            let mut sessions = self.sessions.lock().await;
 
-            // Save while still holding the lock
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.messages.push(msg.clone());
+                session.meta.updated_at = Utc::now();
+                (true, session.messages.len())
+            } else {
+                (false, 0)
+            }
+        };
+
+        // Only save periodically (every 10 messages) to reduce I/O
+        if needs_save && messages_count % 10 == 0 {
+            let sessions = self.sessions.lock().await;
             let data = serde_json::to_string_pretty(&*sessions)
                 .unwrap_or_else(|e| {
                     eprintln!("Warning: failed to serialize session: {}", e);
                     String::new()
                 });
-
             drop(sessions);
 
             if !data.is_empty() {
-                if let Err(e) = tokio::fs::write(self.get_history_path(), data).await {
+                if let Err(e) = tokio::fs::write(&history_path, data).await {
                     eprintln!("Warning: failed to persist session: {}", e);
                 }
             }

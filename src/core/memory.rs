@@ -24,6 +24,27 @@ pub struct shared_memory {
     pub max_messages: usize,
     pub max_pinned_messages: usize,
     pub max_summaries: usize,
+    /// Estimated token count for context management
+    estimated_tokens: usize,
+}
+
+impl shared_memory {
+    /// Estimate token count (rough approximation: 1 token ≈ 4 chars)
+    fn estimate_tokens(&self) -> usize {
+        let query_tokens = self.original_query.len() / 4;
+        let pinned_tokens: usize = self.pinned_messages.iter().map(|m| m.content.len() / 4).sum();
+        let msg_tokens: usize = self.messages.iter().map(|m| m.content.len() / 4).sum();
+        let summary_tokens: usize = self.summaries.iter().map(|s| s.content.len() / 4).sum();
+        query_tokens + pinned_tokens + msg_tokens + summary_tokens
+    }
+
+    pub fn needs_compaction(&self, max_tokens: usize) -> bool {
+        self.estimated_tokens > max_tokens
+    }
+
+    pub fn get_est_tokens(&self) -> usize {
+        self.estimated_tokens
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -35,8 +56,9 @@ impl shared_memory {
             messages: Vec::new(),
             summaries: Vec::new(),
             max_messages,
-            max_pinned_messages: 20, // Limit pinned messages to prevent memory leak
-            max_summaries: 10,       // Limit summaries to prevent memory leak
+            max_pinned_messages: 20,
+            max_summaries: 10,
+            estimated_tokens: 0,
         }
     }
 
@@ -48,28 +70,27 @@ impl shared_memory {
         let msg = message { agent, content };
         if pinned {
             self.pinned_messages.push(msg);
-            // Sliding window for pinned messages
             if self.pinned_messages.len() > self.max_pinned_messages {
                 let overflow = self.pinned_messages.len() - self.max_pinned_messages;
                 self.pinned_messages.drain(0..overflow);
             }
         } else {
             self.messages.push(msg);
-            // sliding window logic for non-pinned messages
             if self.messages.len() > self.max_messages {
                 let overflow = self.messages.len() - self.max_messages;
                 self.messages.drain(0..overflow);
             }
         }
+        self.estimated_tokens = self.estimate_tokens();
     }
 
     pub fn add_summary(&mut self, content: String, round: usize) {
         self.summaries.push(summary { content, round });
-        // Sliding window for summaries
         if self.summaries.len() > self.max_summaries {
             let overflow = self.summaries.len() - self.max_summaries;
             self.summaries.drain(0..overflow);
         }
+        self.estimated_tokens = self.estimate_tokens();
     }
 
     pub fn get_formatted_history(&self) -> String {
@@ -97,5 +118,6 @@ impl shared_memory {
         self.pinned_messages.clear();
         self.summaries.clear();
         self.original_query.clear();
+        self.estimated_tokens = 0;
     }
 }

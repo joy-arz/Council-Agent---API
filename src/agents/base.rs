@@ -286,28 +286,29 @@ Examples of BAD responses (do not do these):
             final_text.push_str(&summaries.join(" "));
 
             // Infinite loop protection: track consecutive failures
-            let all_same_tool = tool_calls_from_stream.iter().all(|(name, _)| {
-                name == &tool_calls_from_stream.first().unwrap().0
-            });
+            let all_same_tool = tool_calls_from_stream.first()
+                .map(|first| tool_calls_from_stream.iter().all(|(name, _)| name == &first.0))
+                .unwrap_or(false);
             let all_failed = tool_results.iter().all(|r| !r.success);
 
             if all_same_tool && all_failed && tool_calls_from_stream.len() == 1 {
+                let tool_name = tool_calls_from_stream.first().unwrap().0.clone();
                 if let Some(ref last) = self.last_failed_tool {
-                    if *last == tool_calls_from_stream.first().unwrap().0 {
+                    if *last == tool_name {
                         self.consecutive_tool_failures += 1;
                     } else {
                         self.consecutive_tool_failures = 1;
-                        self.last_failed_tool = Some(tool_calls_from_stream.first().unwrap().0.clone());
+                        self.last_failed_tool = Some(tool_name.clone());
                     }
                 } else {
                     self.consecutive_tool_failures = 1;
-                    self.last_failed_tool = Some(tool_calls_from_stream.first().unwrap().0.clone());
+                    self.last_failed_tool = Some(tool_name.clone());
                 }
 
                 if self.consecutive_tool_failures >= 3 {
                     final_text.push_str(&format!(
                         "\n[Infinite tool loop detected: {} failed 3 times consecutively. Stopping.]",
-                        tool_calls_from_stream.first().unwrap().0
+                        tool_name
                     ));
                     break;
                 }

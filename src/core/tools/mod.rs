@@ -180,6 +180,17 @@ pub async fn execute_tool(
     let name = &tool_call.name;
     let args = &tool_call.arguments;
 
+    // Security: validate argument size to prevent memory exhaustion
+    let args_size = args.to_string().len();
+    if args_size > crate::utils::constants::MAX_TOOL_ARGUMENT_SIZE {
+        return ToolResult {
+            name: name.clone(),
+            success: false,
+            output: String::new(),
+            error: Some(format!("Tool argument too large ({} bytes, max {}). Refusing to execute.", args_size, crate::utils::constants::MAX_TOOL_ARGUMENT_SIZE)),
+        };
+    }
+
     // Check approval policy if provided
     if let Some(p) = policy {
         let tool_input = args.to_string();
@@ -516,11 +527,16 @@ async fn execute_shell_command(args: &serde_json::Value, workspace_dir: &PathBuf
             name: "run_shell_command".to_string(),
             success: false,
             output: String::new(),
-            error: Some(format!("Security violation: command blocked due to dangerous pattern '{}'", pattern)),
+            error: Some("Security violation: command blocked".to_string()),
         };
     }
 
-    let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
+    // Use configurable timeout, capped at max
+    let max_timeout = crate::utils::constants::SHELL_TIMEOUT_SECS;
+    let timeout_secs = args.get("timeout")
+        .and_then(|v| v.as_u64())
+        .map(|t| t.min(max_timeout))
+        .unwrap_or(max_timeout);
 
     let mut cmd = Command::new("sh");
     cmd.arg("-c")

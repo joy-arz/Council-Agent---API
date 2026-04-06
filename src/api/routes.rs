@@ -18,6 +18,7 @@ use crate::agents::{roles, judge::judge_agent};
 use crate::core::providers_mod::factory;
 use crate::core::WorktreeManager;
 use crate::api::sessions_mod::session_store;
+use crate::api::rate_limit::IpRateLimiter;
 use crate::utils::logger_mod::session_logger;
 
 #[derive(Deserialize)]
@@ -85,7 +86,7 @@ pub struct test_cli_params {
 }
 
 pub async fn test_cli(
-    State((config_inst, _)): State<(Arc<config>, Arc<session_store>)>,
+    State((config_inst, _, _)): State<(Arc<config>, Arc<session_store>, Arc<IpRateLimiter>)>,
     Json(params): Json<test_cli_params>,
 ) -> Json<serde_json::Value> {
     let ws = params.workspace_dir.map(std::path::PathBuf::from).unwrap_or_else(|| config_inst.workspace_dir.clone());
@@ -108,8 +109,18 @@ pub async fn test_cli(
 
 pub async fn handle_enclave(
     Query(params): Query<enclave_params>,
-    State((config_inst, session_store_inst)): State<(Arc<config>, Arc<session_store>)>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    State((config_inst, session_store_inst, rate_limiter)): State<(Arc<config>, Arc<session_store>, Arc<IpRateLimiter>)>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, Json<serde_json::Value>> {
+    // Check rate limit (using localhost as client IP for now)
+    let client_ip = "127.0.0.1";
+    if !rate_limiter.try_acquire(client_ip).await {
+        tracing::warn!("Rate limit exceeded for IP: {}", client_ip);
+        return Err(Json(serde_json::json!({
+            "error": "rate limit exceeded",
+            "retry_after_secs": 1
+        })));
+    }
+
     // sanitize query for logging - remove ANSI escape codes and control characters
     let query_for_log = params.query
         .chars()
@@ -285,7 +296,7 @@ pub async fn handle_enclave(
         rx.recv().await.map(|event| (Result::<Event, Infallible>::Ok(event), rx))
     });
 
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 #[derive(Deserialize)]
@@ -296,7 +307,7 @@ pub struct apply_change_params {
 }
 
 pub async fn apply_change(
-    State((config_inst, _)): State<(Arc<config>, Arc<session_store>)>,
+    State((config_inst, _, _)): State<(Arc<config>, Arc<session_store>, Arc<IpRateLimiter>)>,
     Json(params): Json<apply_change_params>,
 ) -> Json<serde_json::Value> {
     // secure the path to prevent traversal attacks outside the workspace
@@ -363,20 +374,20 @@ pub async fn apply_change(
 
 pub async fn get_session_history(
     Path(session_id): Path<String>,
-    State((_, session_store_inst)): State<(Arc<config>, Arc<session_store>)>,
+    State((_, session_store_inst, _)): State<(Arc<config>, Arc<session_store>, Arc<IpRateLimiter>)>,
 ) -> Json<Vec<agent_response>> {
     Json(session_store_inst.get_history(&session_id).await)
 }
 
 pub async fn list_sessions(
-    State((_, session_store_inst)): State<(Arc<config>, Arc<session_store>)>,
+    State((_, session_store_inst, _)): State<(Arc<config>, Arc<session_store>, Arc<IpRateLimiter>)>,
 ) -> Json<Vec<crate::api::sessions_mod::SessionSummary>> {
     Json(session_store_inst.list_sessions().await)
 }
 
 pub async fn delete_session(
     Path(session_id): Path<String>,
-    State((_, session_store_inst)): State<(Arc<config>, Arc<session_store>)>,
+    State((_, session_store_inst, _)): State<(Arc<config>, Arc<session_store>, Arc<IpRateLimiter>)>,
 ) -> Json<serde_json::Value> {
     let deleted = session_store_inst.delete_session(&session_id).await;
     Json(serde_json::json!({"status": if deleted { "success" } else { "error" }, "deleted": deleted}))

@@ -8,25 +8,34 @@ use once_cell::sync::Lazy;
 
 /// Patterns to redact from logs for security
 static API_KEY_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(api[_-]?key|apikey|bearer|token|secret)["\s:=]+["']?[a-zA-Z0-9_-]{20,}["']?"#).unwrap()
-});
-static PASSWORD_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?i)(password|passwd|pwd)["\s:=]+["']?[^\s"']{4,}["']?"#).unwrap()
+    // Matches various API key formats: api_key=xxx, "bearer": "xxx", Authorization: Bearer xxx
+    Regex::new(r#"(?i)(api[_-]?key|apikey|bearer|token|secret|auth|password|passwd|pwd)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{16,})['"]?"#).unwrap()
 });
 static PRIVATE_KEY_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----").unwrap()
+});
+static MINIMAX_KEY_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    // Matches MiniMax API key format
+    Regex::new(r#"(?i)(minimax.*key)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?"#).unwrap()
+});
+static ENV_VAR_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    // Matches environment variable assignments with sensitive values
+    Regex::new(r#"(?i)(export\s+)?(API_KEY|SECRET|TOKEN|PASSWORD|AUTH|BEARER)\s*=\s*['"]?([^\s'"]+)"#).unwrap()
 });
 
 /// Redact sensitive information from log messages
 fn redact_sensitive_data(message: &str) -> String {
     let mut redacted = message.to_string();
-    
+
     // Redact API keys and tokens
     redacted = API_KEY_PATTERN.replace_all(&redacted, "$1=[REDACTED]").to_string();
-    
-    // Redact passwords
-    redacted = PASSWORD_PATTERN.replace_all(&redacted, "$1=[REDACTED]").to_string();
-    
+
+    // Redact MiniMax-specific keys
+    redacted = MINIMAX_KEY_PATTERN.replace_all(&redacted, "$1=[REDACTED]").to_string();
+
+    // Redact environment variable assignments
+    redacted = ENV_VAR_PATTERN.replace_all(&redacted, "$1$2=[REDACTED]").to_string();
+
     // Redact private keys (replace entire block marker)
     if PRIVATE_KEY_PATTERN.is_match(&redacted) {
         redacted = redacted.replace("-----BEGIN PRIVATE KEY-----", "[PRIVATE KEY REDACTED]");
@@ -34,7 +43,13 @@ fn redact_sensitive_data(message: &str) -> String {
         redacted = redacted.replace("-----BEGIN EC PRIVATE KEY-----", "[PRIVATE KEY REDACTED]");
         redacted = redacted.replace("-----BEGIN OPENSSH PRIVATE KEY-----", "[PRIVATE KEY REDACTED]");
     }
-    
+
+    // Redact long hex/base64 strings that look like tokens
+    static TOKEN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"\b[a-f0-9]{32,}\b").unwrap()
+    });
+    redacted = TOKEN_PATTERN.replace_all(&redacted, "[TOKEN]").to_string();
+
     redacted
 }
 

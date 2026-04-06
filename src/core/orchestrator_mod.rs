@@ -244,20 +244,27 @@ impl orchestrator {
             }
 
             // Context management: check if we need to compact/summarize
-            let msg_count = {
+            let (msg_count, est_tokens) = {
                 let mem = self.memory.lock().await;
-                mem.messages.len() + mem.pinned_messages.len()
+                (mem.messages.len() + mem.pinned_messages.len(), mem.get_est_tokens())
             };
-            // If we have more than 30 messages, summarize the oldest ones
-            if msg_count > 30 {
-                let _ = self.logger.log_context_warning(&format!("message count ({}) exceeds threshold, triggering summarization", msg_count)).await;
-                // For now, just log the compaction event - actual summarization would call an LLM
-                // This is a placeholder for actual summarization logic
+
+            // Log warning if approaching context limit
+            if est_tokens > crate::utils::constants::MAX_CONTEXT_TOKENS {
+                let _ = self.logger.log_context_warning(&format!(
+                    "estimated tokens ({}) exceeds threshold ({})",
+                    est_tokens, crate::utils::constants::MAX_CONTEXT_TOKENS
+                )).await;
+            }
+
+            // If we have too many messages, prune oldest non-pinned messages
+            if msg_count > crate::utils::constants::MAX_CONTEXT_MESSAGES {
                 let _ = self.logger.log_context_compaction(
                     "round_end",
-                    &format!("would summarize oldest {} messages", msg_count - 20),
-                    msg_count - 20
+                    &format!("pruning oldest {} messages", msg_count - crate::utils::constants::MAX_CONTEXT_MESSAGES),
+                    msg_count - crate::utils::constants::MAX_CONTEXT_MESSAGES
                 ).await;
+                // Note: actual pruning happens automatically via sliding window in shared_memory
             }
 
             // check if we should continue or stop

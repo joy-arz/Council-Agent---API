@@ -148,10 +148,9 @@ impl model_provider for cli_provider {
                     // Default for unknown binaries - don't add any flag
                     // User must explicitly include the flag in the binary path
                     _ => {
-                        tracing::warn!("Unknown CLI binary '{}' for autonomous mode, not adding flags. Add flags manually if needed.", binary_name);
+                        tracing::warn!("Unknown CLI binary '{}' for autonomous mode, not adding flags.", binary_name);
                         return Err(anyhow::anyhow!(
-                            "Cannot enable autonomous mode for unknown binary '{}'. Autonomous mode requires known CLI binaries (claude, gemini, qwen, codex, opencode).",
-                            binary_name
+                            "Cannot enable autonomous mode for this binary. Add autonomous flags manually to the binary path if needed."
                         ));
                     }
                 };
@@ -1208,14 +1207,12 @@ pub struct anthropic_provider {
 
 #[allow(dead_code)]
 impl anthropic_provider {
-    pub fn new(api_key: String) -> Self {
-        Self {
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .build()
-                .expect("failed to create HTTP client"),
-            api_key,
-        }
+    pub fn new(api_key: String) -> Result<Self, anyhow::Error> {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| anyhow::anyhow!("failed to create HTTP client: {}", e))?;
+        Ok(Self { client, api_key })
     }
 }
 
@@ -1481,7 +1478,13 @@ pub mod factory {
             }
             ProviderType::Anthropic => {
                 if let Some(key) = api_key {
-                    Arc::new(anthropic_provider::new(key))
+                    match anthropic_provider::new(key) {
+                        Ok(p) => Arc::new(p),
+                        Err(e) => {
+                            tracing::warn!("Failed to create Anthropic provider: {}, falling back to CLI", e);
+                            Arc::new(cli_provider::new("claude".to_string(), workspace_dir))
+                        }
+                    }
                 } else {
                     tracing::warn!("Anthropic provider requested but no API key provided, falling back to CLI");
                     Arc::new(cli_provider::new("claude".to_string(), workspace_dir))

@@ -20,7 +20,9 @@ use crate::core::orchestrator;
 use crate::core::providers_mod::{cli_provider, model_provider};
 use crate::agents::{roles, judge::judge_agent};
 use crate::api::session_store;
+use crate::api::rate_limit::IpRateLimiter;
 use crate::utils::logger_mod::session_logger;
+use crate::utils::constants::{RATE_LIMIT_MAX_TOKENS, RATE_LIMIT_REFILL_RATE};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -51,6 +53,9 @@ async fn main() -> Result<(), anyhow::Error> {
 }
 
 async fn run_server(cfg: Arc<config>, store: Arc<session_store>) -> Result<(), anyhow::Error> {
+    // Create rate limiter for API protection
+    let rate_limiter = Arc::new(IpRateLimiter::new(RATE_LIMIT_MAX_TOKENS, RATE_LIMIT_REFILL_RATE));
+
     let app = Router::new()
         .route("/api/enclave", get(api::handle_enclave))
         .route("/api/browse", get(api::routes::browse_workspace))
@@ -61,14 +66,14 @@ async fn run_server(cfg: Arc<config>, store: Arc<session_store>) -> Result<(), a
         .route("/api/sessions/:session_id", axum::routing::delete(api::routes::delete_session))
         .nest_service("/static", ServeDir::new("src/ui"))
         .route("/", get(|| async { axum::response::Html(include_str!("ui/index.html")) }))
-        .with_state((cfg.clone(), store.clone()))
+        .with_state((cfg.clone(), store.clone(), rate_limiter.clone()))
         .layer(CorsLayer::permissive());
 
     let addr = format!("{}:{}", cfg.host, cfg.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("server listening on http://{}", addr);
 
-    // graceful shutdown on SIGINT/SIGTERM
+    // graceful shutdown on SIGINT/SIGTERM with timeout
     let shutdown_signal = async {
         match tokio::signal::ctrl_c().await {
             Ok(_) => tracing::info!("shutdown signal received, stopping server..."),
@@ -76,9 +81,17 @@ async fn run_server(cfg: Arc<config>, store: Arc<session_store>) -> Result<(), a
         }
     };
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal)
-        .await?;
+    // Add timeout to graceful shutdown
+    let shutdown_result = tokio::time::timeout(
+        std::time::Duration::from_secs(crate::utils::constants::SHUTDOWN_TIMEOUT_SECS),
+        axum::serve(listener, app).with_graceful_shutdown(shutdown_signal)
+    ).await;
+
+    match shutdown_result {
+        Ok(Ok(())) => tracing::info!("server stopped gracefully"),
+        Ok(Err(e)) => tracing::error!("server error: {}", e),
+        Err(_) => tracing::warn!("shutdown timed out after {} seconds, forcing exit", crate::utils::constants::SHUTDOWN_TIMEOUT_SECS),
+    }
 
     tracing::info!("server stopped");
     Ok(())
