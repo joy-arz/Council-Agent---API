@@ -137,10 +137,12 @@ impl session_logger {
             .open(&self.log_path)
             .await?;
 
-        let entry = if message.starts_with("#") || message.starts_with("---") {
-            format!("{}\n", message)
+        // Redact sensitive data before logging
+        let redacted_message = redact_sensitive_data(message);
+        let entry = if redacted_message.starts_with("#") || redacted_message.starts_with("---") {
+            format!("{}\n", redacted_message)
         } else {
-            format!("[{}] {}\n", timestamp, message)
+            format!("[{}] {}\n", timestamp, redacted_message)
         };
 
         file.write_all(entry.as_bytes()).await?;
@@ -229,6 +231,7 @@ impl session_logger {
     }
 
     /// Log busy state change
+    #[allow(dead_code)]
     pub async fn log_busy_state(&self, state: &str) -> tokio::io::Result<()> {
         self.log_event(LogEvent::busy_state_changed {
             state: state.to_string(),

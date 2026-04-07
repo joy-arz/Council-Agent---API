@@ -24,6 +24,7 @@ impl Default for BusyState {
 /// Agent events for streaming and logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
+#[allow(dead_code)]
 pub enum AgentEvent {
     // Session lifecycle
     SessionStarted {
@@ -133,6 +134,7 @@ pub enum AgentEvent {
 
 /// Wrapper for events with ordering metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct EventEnvelope {
     /// Sequential event ID for ordering
     pub id: u64,
@@ -144,6 +146,7 @@ pub struct EventEnvelope {
 
 impl EventEnvelope {
     /// Create a new envelope with auto-incrementing ID
+    #[allow(dead_code)]
     pub fn new(id: u64, event: AgentEvent) -> Self {
         Self {
             id,
@@ -153,6 +156,7 @@ impl EventEnvelope {
     }
 
     /// Create a new envelope with current timestamp
+    #[allow(dead_code)]
     pub fn with_now(id: u64, event: AgentEvent) -> Self {
         Self {
             id,
@@ -164,14 +168,17 @@ impl EventEnvelope {
 
 /// Counter for generating sequential event IDs
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct EventIdCounter(u64);
 
 impl EventIdCounter {
+    #[allow(dead_code)]
     pub fn next(&mut self) -> u64 {
         self.0 += 1;
         self.0
     }
 
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.0 = 0;
     }

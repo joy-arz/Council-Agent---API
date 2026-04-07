@@ -488,8 +488,6 @@ impl model_provider for openai_provider {
 
             // True SSE streaming - parse the stream line by line
             let mut buffer = Vec::new();
-            let mut current_tool_name: Option<String> = None;
-            let mut current_tool_input = String::new();
 
             let mut stream = res.bytes_stream();
 

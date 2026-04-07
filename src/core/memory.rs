@@ -38,6 +38,7 @@ impl shared_memory {
         query_tokens + pinned_tokens + msg_tokens + summary_tokens
     }
 
+    #[allow(dead_code)]
     pub fn needs_compaction(&self, max_tokens: usize) -> bool {
         self.estimated_tokens > max_tokens
     }
@@ -84,6 +85,7 @@ impl shared_memory {
         self.estimated_tokens = self.estimate_tokens();
     }
 
+    #[allow(dead_code)]
     pub fn add_summary(&mut self, content: String, round: usize) {
         self.summaries.push(summary { content, round });
         if self.summaries.len() > self.max_summaries {

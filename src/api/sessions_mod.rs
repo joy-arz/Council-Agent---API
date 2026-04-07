@@ -96,6 +96,7 @@ impl session_store {
     }
 
     /// Create a new session
+    #[allow(dead_code)]
     pub async fn create_session(
         &self,
         session_id: String,
@@ -177,6 +178,7 @@ impl session_store {
     }
 
     /// Update session metadata
+    #[allow(dead_code)]
     pub async fn update_session_meta(&self, session_id: &str, update: SessionMetaUpdate) {
         let mut sessions = self.sessions.lock().await;
 
@@ -217,6 +219,7 @@ impl session_store {
         }
     }
 
+    #[allow(dead_code)]
     async fn save_to_disk(&self) {
         let sessions = self.sessions.lock().await;
         let data = serde_json::to_string_pretty(&*sessions)
@@ -237,11 +240,13 @@ impl session_store {
         sessions.get(session_id).map(|s| s.messages.clone()).unwrap_or_default()
     }
 
+    #[allow(dead_code)]
     pub async fn get_session(&self, session_id: &str) -> Option<EnrichedSession> {
         let sessions: tokio::sync::MutexGuard<'_, HashMap<String, EnrichedSession>> = self.sessions.lock().await;
         sessions.get(session_id).cloned()
     }
 
+    #[allow(dead_code)]
     pub async fn get_child_sessions(&self, parent_id: &str) -> Vec<String> {
         let sessions: tokio::sync::MutexGuard<'_, HashMap<String, EnrichedSession>> = self.sessions.lock().await;
         sessions.get(parent_id)

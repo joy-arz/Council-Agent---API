@@ -55,6 +55,7 @@ impl RateLimiter {
     }
 
     /// Get remaining tokens (approximate)
+    #[allow(dead_code)]
     pub async fn remaining(&self) -> usize {
         *self.tokens.lock().await
     }
@@ -96,6 +97,7 @@ impl IpRateLimiter {
     }
 
     /// Get remaining requests for IP
+    #[allow(dead_code)]
     pub async fn remaining(&self, ip: &str) -> usize {
         let limiters = self.limiters.lock().await;
         if let Some(limiter) = limiters.get(ip) {

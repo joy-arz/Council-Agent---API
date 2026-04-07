@@ -37,6 +37,7 @@ pub struct base_agent {
     consecutive_tool_failures: usize,
     last_failed_tool: Option<String>,
     // Busy state for UI
+    #[allow(dead_code)]
     pub busy_state: BusyState,
     // Approval policy for non-autonomous mode
     approval_policy: Option<ApprovalPolicy>,
@@ -72,6 +73,7 @@ impl base_agent {
     }
 
     /// Update the busy state
+    #[allow(dead_code)]
     pub fn set_busy_state(&mut self, state: BusyState) {
         self.busy_state = state;
     }
@@ -80,6 +82,7 @@ impl base_agent {
         self.is_autonomous = value;
     }
 
+    #[allow(dead_code)]
     pub fn set_approval_policy(&mut self, policy: ApprovalPolicy) {
         self.approval_policy = Some(policy);
     }

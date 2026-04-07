@@ -58,6 +58,7 @@ impl Default for ApprovalPolicy {
 
 impl ApprovalPolicy {
     /// Create a new approval policy
+    #[allow(dead_code)]
     pub fn new(mode: PermissionMode) -> Self {
         Self {
             mode,
@@ -67,11 +68,13 @@ impl ApprovalPolicy {
     }
 
     /// Add an allow pattern (supports wildcards: "execute_bash:git *")
+    #[allow(dead_code)]
     pub fn add_allow(&mut self, pattern: &str) {
         self.allow_list.push(pattern.to_string());
     }
 
     /// Add a deny pattern
+    #[allow(dead_code)]
     pub fn add_deny(&mut self, pattern: &str) {
         self.deny_list.push(pattern.to_string());
     }
@@ -114,21 +117,20 @@ impl ApprovalPolicy {
     }
 
     /// Suggest an allow pattern based on tool call
+    #[allow(dead_code)]
     pub fn suggest_allow_pattern(tool_name: &str, tool_input: &str) -> String {
-        // If input is short/simple, suggest general pattern
+        // Extract command from input if it looks like a shell command
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(tool_input) {
+            if let Some(cmd) = json.get("command").and_then(|v| v.as_str()) {
+                // Suggest pattern for command type
+                let cmd_base = cmd.split_whitespace().next().unwrap_or("*");
+                return format!("{}:{} *", tool_name, cmd_base);
+            }
+        }
+        // Fallback: if input is short/simple, suggest general pattern
         if tool_input.len() < 50 {
             format!("{}:*", tool_name)
         } else {
-            // Extract command from input if it looks like a shell command
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(tool_input) {
-                if let Some(cmd) = json.get("command").and_then(|v| v.as_str()) {
-                    if cmd.len() < 30 {
-                        // Suggest pattern for command type
-                        let cmd_base = cmd.split_whitespace().next().unwrap_or("*");
-                        return format!("{}:{} *", tool_name, cmd_base);
-                    }
-                }
-            }
             format!("{}:{}", tool_name, tool_input.chars().take(30).collect::<String>())
         }
     }

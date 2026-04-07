@@ -522,7 +522,7 @@ async fn execute_shell_command(args: &serde_json::Value, workspace_dir: &PathBuf
     };
 
     // Security: Block dangerous commands
-    if let Some(pattern) = is_command_dangerous(command) {
+    if let Some(_pattern) = is_command_dangerous(command) {
         return ToolResult {
             name: "run_shell_command".to_string(),
             success: false,

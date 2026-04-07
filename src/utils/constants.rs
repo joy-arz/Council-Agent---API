@@ -6,30 +6,39 @@ pub const MAX_TOOL_ARGUMENT_SIZE: usize = 5_000_000;
 
 /// Maximum estimated context tokens before triggering compaction warning
 /// ~150K tokens fits within most LLM context windows (32K-200K)
+#[allow(dead_code)]
 pub const MAX_CONTEXT_TOKENS: usize = 150_000;
 
 /// Maximum context history messages before triggering summarization warning
+#[allow(dead_code)]
 pub const MAX_CONTEXT_MESSAGES: usize = 30;
 
 /// Maximum summaries to keep in memory
+#[allow(dead_code)]
 pub const MAX_SUMMARIES: usize = 10;
 
 /// Maximum pinned messages to prevent memory leak
+#[allow(dead_code)]
 pub const MAX_PINNED_MESSAGES: usize = 20;
 
 /// Maximum messages in sliding window
+#[allow(dead_code)]
 pub const MAX_MESSAGES: usize = 50;
 
 /// Default max rounds for deliberation
+#[allow(dead_code)]
 pub const DEFAULT_MAX_ROUNDS: usize = 7;
 
 /// Minimum rounds before judge auto-decision
+#[allow(dead_code)]
 pub const MIN_ROUNDS_BEFORE_JUDGE: usize = 3;
 
 /// Tool iterations per agent response
+#[allow(dead_code)]
 pub const MAX_TOOL_ITERATIONS: usize = 5;
 
 /// Infinite loop detection threshold
+#[allow(dead_code)]
 pub const INFINITE_LOOP_THRESHOLD: usize = 3;
 
 /// Rate limiting: requests per second
@@ -42,9 +51,11 @@ pub const RATE_LIMIT_MAX_TOKENS: usize = 50;
 pub const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
 
 /// SSE channel buffer size
+#[allow(dead_code)]
 pub const SSE_CHANNEL_BUFFER: usize = 100;
 
 /// Agent response timeout in seconds
+#[allow(dead_code)]
 pub const AGENT_TIMEOUT_SECS: u64 = 120;
 
 /// Shell command timeout in seconds
