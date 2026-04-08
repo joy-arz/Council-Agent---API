@@ -141,7 +141,7 @@ Enclave can run natively on Windows with some considerations:
 
 3. **Build the project**:
    ```powershell
-   git clone <repository-url>
+   git clone https://github.com/joy-arz/Enclave---Council-AI-Agents.git
    cd enclave
    cargo build --release
    ```
