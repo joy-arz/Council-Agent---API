@@ -93,6 +93,90 @@ Sessions are automatically persisted to `.enclave_history.json` in your workspac
 - **CLI Agents**: Ensure you have at least one supported CLI agent installed and accessible in your path (see Supported AI Providers below)
 - **Workspace**: A project directory where Enclave will operate
 
+### Windows Installation
+
+Enclave can run on Windows in two ways:
+
+#### Option 1: Windows Subsystem for Linux (WSL) - Recommended
+
+WSL provides the best experience as Enclave is built for Unix-like systems.
+
+1. **Install WSL 2**:
+   ```powershell
+   wsl --install
+   ```
+
+2. **Install Rust in WSL**:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+3. **Clone and build**:
+   ```bash
+   git clone <repository-url>
+   cd enclave
+   cargo build --release
+   ```
+
+4. **Run the server**:
+   ```bash
+   cargo run --release -- --server
+   ```
+
+5. Access at `http://localhost:8000` from your Windows browser
+
+> **Note for WSL users**: Store your project files within the WSL filesystem (e.g., `/home/user/projects`) for optimal file system performance. Accessing Windows filesystem (`/mnt/c/...`) may be slower.
+
+#### Option 2: Native Windows (PowerShell/CMD)
+
+Enclave can run natively on Windows with some considerations:
+
+1. **Install Rust**:
+   - Download from [rustup.rs](https://rustup.rs/) - the installer supports Windows directly
+   - Choose the MSVC toolchain when prompted
+
+2. **Install Git for Windows**:
+   - Download from [git-scm.com](https://git-scm.com/download/win)
+   - Ensure Git is in your PATH
+
+3. **Build the project**:
+   ```powershell
+   git clone <repository-url>
+   cd enclave
+   cargo build --release
+   ```
+
+4. **Run in server mode**:
+   ```powershell
+   cargo run --release -- --server
+   ```
+
+5. Access at `http://localhost:8000`
+
+**Windows-Specific Considerations:**
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Folder Browser | Supported | Uses native Windows dialog via PowerShell |
+| Shell Commands | Use `cmd.exe` | Commands run via CMD, not PowerShell |
+| Path Handling | Auto-converted | Windows paths converted for internal use |
+| Line Endings | Handled | CRLF/LF conversion applied automatically |
+
+**PowerShell Execution Policy:**
+
+If you encounter execution policy errors, run PowerShell as Administrator:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**Antivirus/Firewall:**
+
+Windows Defender or other antivirus software may slow the first build. You can add exceptions:
+```powershell
+# Add to Windows Defender exclusions
+Add-MpPreference -ExclusionPath "C:\path\to\enclave"
+```
+
 ### Supported AI Providers
 
 Enclave supports both CLI agents and API-based providers. **MiniMax is the default provider** for all agent roles, but you can switch any role to use CLI agents directly from the UI dropdown.
